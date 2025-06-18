@@ -1,0 +1,36 @@
+[package]
+name = "midnight-state-sync"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+async-trait = "0.1"
+backoff = { version = "0.4.0", features = ["tokio"] }
+bech32 = "0.11.0"
+bincode = { version = "1.3" }
+futures = "0.3"
+futures-util = "0.3"
+hex = "0.4"
+itertools = "0.12.0"                                                                                                                                     # Required by midnight
+log = "0.4"
+midnight-ledger-prototype = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", package = "midnight-ledger", tag = "ledger-4.0.0" }
+midnight-node-ledger-helpers = { git = "https://github.com/midnightntwrk/midnight-node", package = "midnight-node-ledger-helpers", tag = "node-0.12.0" }
+midnight-node-res = { git = "https://github.com/midnightntwrk/midnight-node", package = "midnight-node-res", tag = "node-0.12.0" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", tag = "ledger-4.0.0" }
+rand = "0.9"
+reqwest = { version = "0.12", features = ["json"] }
+serde = { version = "1.0", features = ["derive", "alloc"] }
+serde_json = "1"
+simplelog = "0.12"
+subxt = "0.37.0"
+thiserror = "2.0"
+tokio = { version = "1.43", features = ["sync", "io-util", "time"] }
+tokio-tungstenite = { version = "0.20", features = ["native-tls"] }
+
+[patch."https://github.com/input-output-hk/midnight-ledger-prototype"]
+mn-ledger-storage = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", package = "midnight-storage", tag = "ledger-4.0.0" }
+coin-structure = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", package = "midnight-coin-structure", tag = "ledger-4.0.0" }
+onchain-runtime = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", package = "midnight-onchain-runtime", tag = "ledger-4.0.0" }
+midnight-serialize = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", tag = "ledger-4.0.0" }
+base-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", package = "midnight-base-crypto", tag = "ledger-4.0.0" }
+transient-crypto = { git = "https://github.com/midnightntwrk/midnight-ledger-prototype", package = "midnight-transient-crypto", tag = "ledger-4.0.0" }
