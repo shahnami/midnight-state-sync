@@ -5,18 +5,20 @@ mod wallet;
 
 use midnight_node_ledger_helpers::{
 	DefaultDB, InputInfo, LedgerContext, NATIVE_TOKEN, NetworkId, OfferInfo, OutputInfo, Proof,
-	ProofProvider, TokenType, Transaction, WalletSeed,
+	ProofProvider, TokenType, Transaction, Wallet, WalletKind, WalletSeed,
 };
 use rand::Rng;
 use std::sync::Arc;
 use subxt::{OnlineClient, PolkadotConfig};
 use tracing::{error, info};
 
-use crate::transaction::{
-	builder::TransactionError,
-	generator::midnight::{remote_prover::RemoteProofServer, sender},
+use crate::{
+	transaction::{
+		builder::TransactionError,
+		generator::midnight::{address::MidnightAddress, remote_prover::RemoteProofServer, sender},
+	},
+	utils::format_token_amount,
 };
-use crate::utils::format_token_amount;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -61,8 +63,13 @@ async fn main() {
 
 	info!("Created proof provider");
 
-	let seed = "2e347e236daa04faad881f1dc5dc3b8a9b4e8e4429e9d0728aad78ada199b66b".to_string(); //wallet::generate_random_seed();
+	let seed = "6ac456637ef316762050781aea23633ad36dd30f846541587bececf53be05a79".to_string(); //wallet::generate_random_seed();
 	let wallet_seed = WalletSeed::from(seed.as_str());
+	let wallet = Wallet::<DefaultDB>::new(wallet_seed, 0, WalletKind::NoLegacy);
+	let source_address = MidnightAddress::from_wallet(&wallet, network);
+
+	info!("Wallet seed: {:?}", seed);
+	info!("Wallet address: {:?}", source_address.encode());
 
 	let destination_seed = wallet::generate_random_seed();
 	let destination_wallet_seed = WalletSeed::from(destination_seed.as_str());
@@ -270,11 +277,7 @@ pub async fn make_simple_transfer(
 		format_token_amount(amount, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);
 
-	// Create the guaranteed offer with input and recipient output
-	// The midnight-node library automatically handles:
-	// 1. Fee calculation and deduction
-	// 2. Change output creation (shown in deltas)
-	// 3. Balance validation during well_formed check
+	// Create the guaranteed offer with input and outputs
 	let mut offer = OfferInfo::default();
 	offer.inputs.push(Box::new(input_info));
 	offer.outputs.push(Box::new(recipient_output));
