@@ -1,5 +1,6 @@
 mod indexer;
 mod transaction;
+mod utils;
 mod wallet;
 
 use midnight_node_ledger_helpers::{
@@ -14,6 +15,7 @@ use crate::transaction::{
 	builder::TransactionError,
 	generator::midnight::{remote_prover::RemoteProofServer, sender},
 };
+use crate::utils::format_token_amount;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
@@ -111,14 +113,20 @@ async fn main() {
 
 	// Get current balance from wallet sync
 	let available_utxo_value = wallet_sync_service.get_current_balance().await;
-	log::info!("Retrieved wallet balance: {} dust", available_utxo_value);
+	log::info!(
+		"Retrieved wallet balance: {} tDUST",
+		format_token_amount(available_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
+	);
+
+	#[allow(clippy::identity_op)]
+	let amount = 1 * 10u128.pow(transaction::MIDNIGHT_TOKEN_DECIMALS); // 1 tDUST
 
 	let transaction = make_simple_transfer(
 		available_utxo_value,
 		context.clone(),
 		wallet_seed,
 		destination_wallet_seed,
-		1000,
+		amount,
 		NATIVE_TOKEN,
 		proof_provider,
 	)
@@ -165,13 +173,16 @@ pub async fn make_simple_transfer(
 	// Validate total amount including fees
 	if total_required > available_utxo_value {
 		return Err(TransactionError::InsufficientBalance(format!(
-			"Requested {} dust + {} dust fee = {} dust total, but only {} dust available",
-			amount, actual_fee, total_required, available_utxo_value
+			"Requested {} tDUST + {} tDUST fee = {} tDUST total, but only {} tDUST available",
+			format_token_amount(amount, transaction::MIDNIGHT_TOKEN_DECIMALS),
+			format_token_amount(actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS),
+			format_token_amount(total_required, transaction::MIDNIGHT_TOKEN_DECIMALS),
+			format_token_amount(available_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
 		)));
 	}
 	log::info!(
-		"Amount validated successfully (including {} dust fee)",
-		actual_fee
+		"Amount validated successfully (including {} tDUST fee)",
+		format_token_amount(actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);
 
 	// ============================================
@@ -190,9 +201,9 @@ pub async fn make_simple_transfer(
 	for (idx, (nullifier, qualified_coin_info)) in from_wallet.state.coins.iter().enumerate() {
 		let coin_info: midnight_node_ledger_helpers::CoinInfo = (&*qualified_coin_info).into();
 		log::info!(
-			"   - Coin {}: value={} dust, type={:?}, nullifier={:?}",
+			"   - Coin {}: value={} tDUST, type={:?}, nullifier={:?}",
 			idx + 1,
-			coin_info.value,
+			format_token_amount(coin_info.value, transaction::MIDNIGHT_TOKEN_DECIMALS),
 			coin_info.type_,
 			nullifier
 		);
@@ -206,10 +217,10 @@ pub async fn make_simple_transfer(
 	};
 
 	log::info!(
-		"Searching for UTXO with minimum value: {} dust (amount: {} + fee: {})",
-		amount + actual_fee,
-		amount,
-		actual_fee
+		"Searching for UTXO with minimum value: {} tDUST (amount: {} tDUST + fee: {} tDUST)",
+		format_token_amount(amount + actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS),
+		format_token_amount(amount, transaction::MIDNIGHT_TOKEN_DECIMALS),
+		format_token_amount(actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);
 
 	// Find the actual UTXO that will be selected
@@ -217,33 +228,36 @@ pub async fn make_simple_transfer(
 	let actual_utxo_value = selected_coin.value;
 
 	log::info!("Selected UTXO details:");
-	log::info!("   - Value: {} dust", actual_utxo_value);
+	log::info!(
+		"   - Value: {} tDUST",
+		format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS)
+	);
 	log::info!("   - Type: {:?}", selected_coin.type_);
 	log::info!("   - Nonce: {:?}", selected_coin.nonce);
 
 	// Verify the selected UTXO has sufficient value
 	if actual_utxo_value < amount + actual_fee {
 		log::error!(
-			"Selected UTXO value {} is insufficient for amount {} + fee {} = {}",
-			actual_utxo_value,
-			amount,
-			actual_fee,
-			amount + actual_fee
+			"Selected UTXO value {} tDUST is insufficient for amount {} tDUST + fee {} tDUST = {} tDUST",
+			format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
+			format_token_amount(amount, transaction::MIDNIGHT_TOKEN_DECIMALS),
+			format_token_amount(actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS),
+			format_token_amount(amount + actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS)
 		);
 		return Err(TransactionError::InsufficientBalance(format!(
-			"Selected UTXO value {} is insufficient for transaction amount {} + fee {} = {}",
-			actual_utxo_value,
-			amount,
-			actual_fee,
-			amount + actual_fee
+			"Selected UTXO value {} tDUST is insufficient for transaction amount {} tDUST + fee {} tDUST = {} tDUST",
+			format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
+			format_token_amount(amount, transaction::MIDNIGHT_TOKEN_DECIMALS),
+			format_token_amount(actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS),
+			format_token_amount(amount + actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS)
 		)));
 	}
 
 	log::info!(
-		"Found UTXO with value: {} dust (requested minimum: {} dust including {} fee)",
-		actual_utxo_value,
-		amount + actual_fee,
-		actual_fee
+		"Found UTXO with value: {} tDUST (requested minimum: {} tDUST including {} tDUST fee)",
+		format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
+		format_token_amount(amount + actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS),
+		format_token_amount(actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);
 
 	// Now create the actual input_info with the exact UTXO value that will be spent
@@ -255,10 +269,10 @@ pub async fn make_simple_transfer(
 	};
 
 	log::info!(
-		"Input info: {{origin: {:?}, token_type: {:?}, value: {:?} (actual UTXO value)}}",
+		"Input info: {{origin: {:?}, token_type: {:?}, value: {} tDUST (actual UTXO value)}}",
 		from_wallet_seed,
 		token_type,
-		actual_utxo_value
+		format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
 	);
 
 	// Create output to recipient
@@ -269,37 +283,39 @@ pub async fn make_simple_transfer(
 	};
 
 	log::info!(
-		"Recipient output: {{destination: {:?}, token_type: {:?}, value: {:?}}}",
+		"Recipient output: {{destination: {:?}, token_type: {:?}, value: {} tDUST}}",
 		to_wallet_seed,
 		token_type,
-		amount
+		format_token_amount(amount, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);
+
+	let change_value = actual_utxo_value.saturating_sub(amount);
 
 	log::info!("=== TRANSACTION OFFER SUMMARY ===");
 	log::info!("Guaranteed offer created with:");
 	log::info!(
-		"   INPUT:  value={} dust, origin={:?}",
-		input_info.value,
+		"   INPUT:  value={} tDUST, origin={:?}",
+		format_token_amount(input_info.value, transaction::MIDNIGHT_TOKEN_DECIMALS),
 		input_info.origin
 	);
 	log::info!(
-		"   OUTPUT: value={} dust, destination={:?}",
-		recipient_output.value,
+		"   OUTPUT: value={} tDUST, destination={:?}",
+		format_token_amount(recipient_output.value, transaction::MIDNIGHT_TOKEN_DECIMALS),
 		recipient_output.destination
 	);
 	log::info!(
-		"   Change: {} dust (will be handled automatically by midnight-node)",
-		actual_utxo_value.saturating_sub(amount)
+		"   Change: {} tDUST (will be handled automatically by midnight-node)",
+		format_token_amount(change_value, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);
 	log::info!(
-		"   Fee: {} dust (estimated, actual will be calculated by midnight-node)",
-		actual_fee
+		"   Fee: {} tDUST (estimated, actual will be calculated by midnight-node)",
+		format_token_amount(actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);
 	log::info!(
-		"   Balance check: {} input >= {} output + {} change + fee ✓",
-		actual_utxo_value,
-		amount,
-		actual_utxo_value.saturating_sub(amount)
+		"   Balance check: {} tDUST input >= {} tDUST output + {} tDUST change + fee ✓",
+		format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
+		format_token_amount(amount, transaction::MIDNIGHT_TOKEN_DECIMALS),
+		format_token_amount(change_value, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);
 
 	// Create the guaranteed offer with input and recipient output

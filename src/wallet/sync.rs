@@ -2,6 +2,8 @@ use crate::indexer::{
 	MidnightIndexerClient, TransactionData, ViewingKeyFormat, WalletSyncEvent,
 	ZswapChainStateUpdate,
 };
+use crate::transaction::MIDNIGHT_TOKEN_DECIMALS;
+use crate::utils::format_token_amount;
 use crate::wallet::WalletSyncError;
 use crate::wallet::types::CollapsedUpdateInfo;
 
@@ -401,17 +403,17 @@ impl MidnightWalletSyncService {
 			let coin_info: midnight_node_ledger_helpers::CoinInfo = (&*qualified_coin_info).into();
 
 			log::info!(
-				"Coin {}: type={:?}, value={} dust, nullifier={:?}",
+				"Coin {}: type={:?}, value={} tDUST, nullifier={:?}",
 				idx + 1,
 				coin_info.type_,
-				coin_info.value,
+				format_token_amount(coin_info.value, MIDNIGHT_TOKEN_DECIMALS),
 				nullifier
 			);
 
 			if coin_info.type_ == NATIVE_TOKEN {
 				log::info!(
-					"Adding native token coin with value: {} dust",
-					coin_info.value
+					"Adding native token coin with value: {} tDUST",
+					format_token_amount(coin_info.value, MIDNIGHT_TOKEN_DECIMALS)
 				);
 				balance = balance.saturating_add(coin_info.value);
 			} else {
