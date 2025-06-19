@@ -54,8 +54,15 @@ The demo will:
 The transaction fails with the following error:
 
 ```
-[ERROR] ❌ Transaction failed in best block: Runtime(Module(ModuleError(<Midnight::Transaction>)))
-[ERROR] InvalidError: Zswap
+2025-06-19T11:04:12.144532Z ERROR Transaction failed in best block: Runtime(Module(ModuleError(<Midnight::Transaction>)))
+2025-06-19T11:04:12.144636Z ERROR Runtime error details: Module(ModuleError(<Midnight::Transaction>))
+2025-06-19T11:04:12.144699Z ERROR Raw error bytes: [05, 03, 00, 03, 00]
+2025-06-19T11:04:12.144716Z ERROR Pallet index: 5, Error index: 3
+2025-06-19T11:04:12.144810Z ERROR TransactionError variant index: 0
+2025-06-19T11:04:12.144825Z ERROR Specific error: Invalid(InvalidError)
+2025-06-19T11:04:12.144838Z ERROR InvalidError variant index: 3
+2025-06-19T11:04:12.144851Z ERROR InvalidError: Zswap
+2025-06-19T11:04:12.144923Z ERROR Metadata - pallet: Midnight, variant: Transaction, error: 3
 ```
 
 The error occurs despite:
@@ -82,27 +89,19 @@ The demo uses:
 - **Indexer**: `https://indexer.testnet-02.midnight.network/api/v1/graphql`
 - **Proof Server**: `http://localhost:6300`
 
-## Debugging
-
-To see more detailed logs, you can adjust the log level in `main.rs`:
-
-```rust
-simplelog::LevelFilter::Debug  // or Trace for even more detail
-```
-
 ## Example Log Output
 
 ```
-18:54:05 [INFO] Starting wallet sync service
-18:54:06 [INFO] Created indexer client
-18:54:06 [INFO] Created proof provider
-18:54:06 [INFO] Created context
-18:54:06 [INFO] Created wallet sync service
-18:54:06 [INFO] Connecting wallet with viewing key: mn_shield-esk_test1qvqzp0dwdw5u5qm35whwhvz9kv7j3knrmq35snxgzavrntk2aaz057qv478hz8
-18:54:07 [INFO] Established wallet session: d5a3020ca9d636e7ad698417a3957c0ed1828be2722a8454c07bfe0ada9c9c19
-18:54:07 [INFO] Established wallet session: d5a3020ca9d636e7ad698417a3957c0ed1828be2722a8454c07bfe0ada9c9c19
-18:54:07 [INFO] Starting wallet sync from index 0 using session d5a3020ca9d636e7ad698417a3957c0ed1828be2722a8454c07bfe0ada9c9c19
-18:54:08 [INFO] Processing event: ViewingUpdate {
+2025-06-19T11:14:24.790730Z  INFO Starting wallet sync service
+2025-06-19T11:14:26.028583Z  INFO Created indexer client
+2025-06-19T11:14:26.028601Z  INFO Created proof provider
+2025-06-19T11:14:26.030196Z  INFO Created context
+2025-06-19T11:14:26.030269Z  INFO Created wallet sync service
+2025-06-19T11:14:26.030285Z  INFO Connecting wallet with viewing key: mn_shield-esk_test1qvqzp0dwdw5u5qm35whwhvz9kv7j3knrmq35snxgzavrntk2aaz057qv478hz8
+2025-06-19T11:14:26.588839Z  INFO Established wallet session: d5a3020ca9d636e7ad698417a3957c0ed1828be2722a8454c07bfe0ada9c9c19
+2025-06-19T11:14:26.588861Z  INFO Established wallet session: d5a3020ca9d636e7ad698417a3957c0ed1828be2722a8454c07bfe0ada9c9c19
+2025-06-19T11:14:26.588865Z  INFO Starting wallet sync from index 0 using session d5a3020ca9d636e7ad698417a3957c0ed1828be2722a8454c07bfe0ada9c9c19
+2025-06-19T11:14:27.679243Z  INFO Processing event: ViewingUpdate {
     type_name: "ViewingUpdate",
     index: 10034,
     update: [
@@ -134,126 +133,122 @@ simplelog::LevelFilter::Debug  // or Trace for even more detail
         },
     ],
 }
-18:54:08 [INFO] Merkle tree collapsed update at blockchain index 10034 - protocol: 12000, start: 0, end: 10031, update_len: 436
-18:54:08 [INFO] Storing collapsed update for LedgerContext sync: start=0, end=10031
-18:54:08 [INFO] Successfully stored relevant collapsed update: 10034
-18:54:08 [INFO] Processing transaction - blockchain_index: 10034, mt_start: 10032, mt_end: 10033
-18:54:08 [INFO] Successfully stored relevant transaction: 39d23898b691392efb273080f6da993f59b73ea82fee3f39b97857d7d2dbb76d
-18:54:08 [INFO] Processing event: ProgressUpdate {
+2025-06-19T11:14:27.680562Z  INFO Merkle tree collapsed update at blockchain index 10034 - protocol: 12000, start: 0, end: 10031, update_len: 436
+2025-06-19T11:14:27.680580Z  INFO Storing collapsed update for LedgerContext sync: start=0, end=10031
+2025-06-19T11:14:27.680858Z  INFO Successfully stored relevant collapsed update: 10034
+2025-06-19T11:14:27.680879Z  INFO Processing transaction - blockchain_index: 10034, mt_start: 10032, mt_end: 10033
+2025-06-19T11:14:27.684940Z  INFO Successfully stored relevant transaction: 39d23898b691392efb273080f6da993f59b73ea82fee3f39b97857d7d2dbb76d
+2025-06-19T11:14:27.685486Z  INFO Processing event: ProgressUpdate {
     type_name: "ProgressUpdate",
-    highest_index: 10045,
-    highest_relevant_index: 10045,
+    highest_index: 10169,
+    highest_relevant_index: 10169,
     highest_relevant_wallet_index: 10033,
 }
-18:54:08 [INFO] Wallet sync completed
-18:54:08 [INFO] Sync completed! Processed 1 events
-18:54:08 [INFO] Successfully applied collapsed update: start=0, end=10031, new first_free=10032, tree_height_after=32, root changed: - -> dc383cbfa06071d685da70059d0484c41abdc0bf1ef3c95c2c69db2460533a35
-18:54:08 [INFO] Wallet has 1 total coins
-18:54:08 [INFO] Coin 1: type=TokenType(0000000000000000000000000000000000000000000000000000000000000000), value=1000000000 dust, nullifier=Nullifier(20334f507349909c81cb99042e5ec06eb9024904a53c19307cae61ca953b76a4)
-18:54:08 [INFO] Adding native token coin with value: 1000000000 dust
-18:54:08 [INFO] Retrieved wallet balance: 1000000000 dust
-18:54:08 [INFO] Starting simple transfer with wallet sync
-18:54:08 [INFO] Amount validated successfully (including 50000 dust fee)
-18:54:08 [INFO] === UTXO SELECTION PROCESS ===
-18:54:08 [INFO]    - Total coins: 1
-18:54:08 [INFO]    - Coin 1: value=1000000000 dust, type=TokenType(0000000000000000000000000000000000000000000000000000000000000000), nullifier=Nullifier(20334f507349909c81cb99042e5ec06eb9024904a53c19307cae61ca953b76a4)
-18:54:08 [INFO] Searching for UTXO with minimum value: 51000 dust (amount: 1000 + fee: 50000)
-18:54:08 [INFO] Selected UTXO details:
-18:54:08 [INFO]    - Value: 1000000000 dust
-18:54:08 [INFO]    - Type: TokenType(0000000000000000000000000000000000000000000000000000000000000000)
-18:54:08 [INFO]    - Nonce: Nonce(e8857b30b2f476721b1297ed39b6fe8fee3c4cd51c920eca395912d09bcb9b17)
-18:54:08 [INFO] Found UTXO with value: 1000000000 dust (requested minimum: 51000 dust including 50000 fee)
-18:54:08 [INFO] Input info: {origin: WalletSeed([46, 52, 126, 35, 109, 170, 4, 250, 173, 136, 31, 29, 197, 220, 59, 138, 155, 78, 142, 68, 41, 233, 208, 114, 138, 173, 120, 173, 161, 153, 182, 107]), token_type: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000000000 (actual UTXO value)}
-18:54:08 [INFO] Recipient output: {destination: WalletSeed([174, 175, 14, 200, 184, 52, 210, 81, 134, 88, 12, 9, 254, 78, 41, 142, 193, 52, 210, 17, 139, 202, 133, 95, 87, 95, 88, 194, 33, 43, 241, 109]), token_type: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000}
-18:54:08 [INFO] === TRANSACTION OFFER SUMMARY ===
-18:54:08 [INFO] Guaranteed offer created with:
-18:54:08 [INFO]    INPUT:  value=1000000000 dust, origin=WalletSeed([46, 52, 126, 35, 109, 170, 4, 250, 173, 136, 31, 29, 197, 220, 59, 138, 155, 78, 142, 68, 41, 233, 208, 114, 138, 173, 120, 173, 161, 153, 182, 107])
-18:54:08 [INFO]    OUTPUT: value=1000 dust, destination=WalletSeed([174, 175, 14, 200, 184, 52, 210, 81, 134, 88, 12, 9, 254, 78, 41, 142, 193, 52, 210, 17, 139, 202, 133, 95, 87, 95, 88, 194, 33, 43, 241, 109])
-18:54:08 [INFO]    Change: 999999000 dust (will be handled automatically by midnight-node)
-18:54:08 [INFO]    Fee: 50000 dust (estimated, actual will be calculated by midnight-node)
-18:54:08 [INFO]    Balance check: 1000000000 input >= 1000 output + 999999000 change + fee ✓
-18:54:08 [INFO] RNG seed generated successfully with timestamp mixing for uniqueness
-18:54:08 [INFO] Starting transaction build process
-18:54:08 [INFO] Creating StandardTransactionInfo with context...
-18:54:08 [INFO] StandardTransactionInfo created successfully
-18:54:08 [INFO] Setting guaranteed offer...
-18:54:08 [INFO] Guaranteed offer set successfully
-18:54:08 [INFO] Built transaction: StandardTransaction {
+2025-06-19T11:14:27.685494Z  INFO Wallet sync completed
+2025-06-19T11:14:27.685498Z  INFO Sync completed! Processed 1 events
+2025-06-19T11:14:27.712014Z  INFO Successfully applied collapsed update: start=0, end=10031, new first_free=10032, tree_height_after=32, root changed: - -> dc383cbfa06071d685da70059d0484c41abdc0bf1ef3c95c2c69db2460533a35
+2025-06-19T11:14:27.718886Z  INFO apply{secret_keys=<secret keys>}: received coin coin=Info { nonce: Nonce(e8857b30b2f476721b1297ed39b6fe8fee3c4cd51c920eca395912d09bcb9b17), type_: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000000000 }
+2025-06-19T11:14:27.753822Z  WARN apply:apply_section{guaranteed=Some(None)}:try_apply: attempted spend with unknown Merkle tree input.merkle_tree_root=30407a002e29d9cf424cda2a4382cf9934a8e42c4c0ed4fde5afdda3ea0b114d
+2025-06-19T11:14:27.753943Z  INFO Wallet has 1 total coins
+2025-06-19T11:14:27.753956Z  INFO Coin 1: type=TokenType(0000000000000000000000000000000000000000000000000000000000000000), value=1000.000000 tDUST, nullifier=Nullifier(20334f507349909c81cb99042e5ec06eb9024904a53c19307cae61ca953b76a4)
+2025-06-19T11:14:27.753965Z  INFO Adding native token coin with value: 1000.000000 tDUST
+2025-06-19T11:14:27.753978Z  INFO Retrieved wallet balance: 1000.000000 tDUST
+2025-06-19T11:14:27.753983Z  INFO Starting simple transfer with wallet sync
+2025-06-19T11:14:27.753986Z  INFO Amount validated successfully (including 0.050000 tDUST fee)
+2025-06-19T11:14:27.754006Z  INFO Selected UTXO details:
+2025-06-19T11:14:27.754009Z  INFO    - Value: 1000.000000 tDUST
+2025-06-19T11:14:27.754011Z  INFO    - Type: TokenType(0000000000000000000000000000000000000000000000000000000000000000)
+2025-06-19T11:14:27.754014Z  INFO    - Nonce: Nonce(e8857b30b2f476721b1297ed39b6fe8fee3c4cd51c920eca395912d09bcb9b17)
+2025-06-19T11:14:27.754018Z  INFO Found UTXO with value: 1000.000000 tDUST (requested minimum: 1.050000 tDUST including 0.050000 tDUST fee)
+2025-06-19T11:14:27.754022Z  INFO Input info: {origin: WalletSeed([46, 52, 126, 35, 109, 170, 4, 250, 173, 136, 31, 29, 197, 220, 59, 138, 155, 78, 142, 68, 41, 233, 208, 114, 138, 173, 120, 173, 161, 153, 182, 107]), token_type: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000.000000 tDUST (actual UTXO value)}
+2025-06-19T11:14:27.754040Z  INFO Recipient output: {destination: WalletSeed([49, 20, 173, 99, 243, 146, 82, 181, 205, 34, 217, 26, 228, 219, 13, 141, 31, 140, 18, 66, 199, 153, 147, 250, 125, 156, 64, 234, 91, 29, 222, 102]), token_type: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1.000000 tDUST}
+2025-06-19T11:14:27.754061Z  INFO Starting transaction build process
+2025-06-19T11:14:27.754064Z  INFO Creating StandardTransactionInfo with context...
+2025-06-19T11:14:27.754077Z  INFO StandardTransactionInfo created successfully
+2025-06-19T11:14:27.754079Z  INFO Setting guaranteed offer...
+2025-06-19T11:14:27.754081Z  INFO Guaranteed offer set successfully
+2025-06-19T11:14:27.754083Z  INFO Building transaction...
+2025-06-19T11:14:27.755121Z DEBUG spend{secret_keys=<secret keys> coin=QualifiedInfo { nonce: Nonce(e8857b30b2f476721b1297ed39b6fe8fee3c4cd51c920eca395912d09bcb9b17), type_: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000000000, mt_index: 0 } segment=0}:spend_from_tree{secret_keys=<secret keys> coin=QualifiedInfo { nonce: Nonce(e8857b30b2f476721b1297ed39b6fe8fee3c4cd51c920eca395912d09bcb9b17), type_: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000000000, mt_index: 0 } segment=0}: spending contract-owned coin
+2025-06-19T11:14:27.755408Z DEBUG watching for coin coin=Info { nonce: Nonce(6da1bec9bed060abcabbf82d8c4c6b0bd0c77ce60526a912397f9919a8443569), type_: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000000 }
+2025-06-19T11:14:27.757716Z DEBUG new{coin=Info { nonce: Nonce(6da1bec9bed060abcabbf82d8c4c6b0bd0c77ce60526a912397f9919a8443569), type_: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000000 } segment=0 target_cpk=PublicKey(2a96548ae0ef6689dbfb02452a68f0097430b3508213e689ab809bc634b455b5) target_epk=Some(PublicKey(JubjubSubgroup(JubjubExtended { u: Scalar(0x0f1fc9d2dca99505dac185d82aa2e5d45a49845696ce15e07c8578c6fe3e61af), v: Scalar(0x6bb007c00d4114e8a8ef663fddaf7315ecc64522b013c5112fb58c07cd709bdc), z: Scalar(0x3e43c46e7b2abd99343eb01bc5102111e6134c59974657e947263ecfed4cd9a8), t1: Scalar(0x5ea21ab2ade24c4f4ad23d1ef5e18b6cdcac5d372084801a60debdf8e5c60aee), t2: Scalar(0x557d4fb7b0f9c4e3ef5c00a59f1d56930aa419fee75e80eb5525d04dbb4a3467) })))}:new_with_ciphertext{coin=Info { nonce: Nonce(6da1bec9bed060abcabbf82d8c4c6b0bd0c77ce60526a912397f9919a8443569), type_: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000000 } segment=0 target_cpk=PublicKey(2a96548ae0ef6689dbfb02452a68f0097430b3508213e689ab809bc634b455b5) ciph=Some(CoinCiphertext { c: JubjubSubgroup(JubjubExtended { u: Scalar(0x67725757a16b3954928fb25918e39fb61718d4bf67754558a08605b08290592b), v: Scalar(0x61444018d5721fc8858680910c046a4ae63aa3fa19c5a201393c123c702f6f53), z: Scalar(0x176c7facefc49aa7cde59e7902efeba6a4a88d7496aecab28b405874d4c4747c), t1: Scalar(0x2669d44117035cee3723d96cd2d2df2ab654ed52ae62f07691efc0bc14417042), t2: Scalar(0x68c2a1d2c9f6fda08fdffe8758681a213874b8e2d399fa96c1084fa4b51c8c70) }), ciph: [81c3eb9d67efa3a67159b2ce3e6a450e3cd1dc0929e752516af65bd5c3b7090f, 1c9d9fc2e2b47a18a84583dac1d31fce98b68b9ed79572077e6043d0eb6de426, 4394dd79d71b685a3a134f2f4c34957bca1b2f612f581447cd22467508c59e09, 4630a1419b8d3065225c03965db64f54af15d68b723909c7bde021691a745f62, e7e95e26b3f70ab328d412f517d076edab08009987938a6394aa1207a60bf259, 0e809c2eba1c9a5da416773d44c4e3fae5db8883c41943ae30c8fdc1c146c625] })}: creating new contract-owned output coin
+2025-06-19T11:14:27.758293Z  INFO Built transaction: StandardTransaction {
     guaranteed_coins: {
         inputs: [
             <shielded input Nullifier(20334f507349909c81cb99042e5ec06eb9024904a53c19307cae61ca953b76a4)>,
         ],
         outputs: [
-            <shielded output Commitment(a6187c1e628096e38dff1f7485a3cfbd9eac458cb14021b190d45b6fc32a6eea)>,
+            <shielded output Commitment(694ce057cbcb1e9227fcc44a71c0991090a00ee8a6c9b74b1720b090337405c5)>,
         ],
         transient: [],
         deltas: [
-            TokenType(0000000000000000000000000000000000000000000000000000000000000000) -> 999999000,
+            TokenType(0000000000000000000000000000000000000000000000000000000000000000) -> 999000000,
         ],
     },
     fallible_coins: None,
     contract_calls: None,
-    binding_randomness: db01a3da11aa7422810dd784964de4af753142624639df7e4f5ee32e2f67e806,
+    binding_randomness: d625a47630242bffae00e977a652bd557b67ebf97f6aa0bbd2e22360c41eba09,
 }
-18:54:08 [INFO] Starting proof generation...
-Proof server URL: http://localhost:6300/prove-tx
-18:54:13 [INFO] Proof generation completed successfully
-18:54:13 [INFO] Prove transaction: StandardTransaction {
+2025-06-19T11:14:27.758316Z  INFO Starting proof generation...
+2025-06-19T11:14:27.759261Z DEBUG spend{secret_keys=<secret keys> coin=QualifiedInfo { nonce: Nonce(e8857b30b2f476721b1297ed39b6fe8fee3c4cd51c920eca395912d09bcb9b17), type_: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000000000, mt_index: 0 } segment=0}:spend_from_tree{secret_keys=<secret keys> coin=QualifiedInfo { nonce: Nonce(e8857b30b2f476721b1297ed39b6fe8fee3c4cd51c920eca395912d09bcb9b17), type_: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000000000, mt_index: 0 } segment=0}: spending contract-owned coin
+2025-06-19T11:14:27.759463Z DEBUG watching for coin coin=Info { nonce: Nonce(ce6bc51a692c8e7a5b7d998e2a9fac889e138b0093faa6863e5545fe2440f7aa), type_: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000000 }
+2025-06-19T11:14:27.762197Z DEBUG new{coin=Info { nonce: Nonce(ce6bc51a692c8e7a5b7d998e2a9fac889e138b0093faa6863e5545fe2440f7aa), type_: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000000 } segment=0 target_cpk=PublicKey(2a96548ae0ef6689dbfb02452a68f0097430b3508213e689ab809bc634b455b5) target_epk=Some(PublicKey(JubjubSubgroup(JubjubExtended { u: Scalar(0x0f1fc9d2dca99505dac185d82aa2e5d45a49845696ce15e07c8578c6fe3e61af), v: Scalar(0x6bb007c00d4114e8a8ef663fddaf7315ecc64522b013c5112fb58c07cd709bdc), z: Scalar(0x3e43c46e7b2abd99343eb01bc5102111e6134c59974657e947263ecfed4cd9a8), t1: Scalar(0x5ea21ab2ade24c4f4ad23d1ef5e18b6cdcac5d372084801a60debdf8e5c60aee), t2: Scalar(0x557d4fb7b0f9c4e3ef5c00a59f1d56930aa419fee75e80eb5525d04dbb4a3467) })))}:new_with_ciphertext{coin=Info { nonce: Nonce(ce6bc51a692c8e7a5b7d998e2a9fac889e138b0093faa6863e5545fe2440f7aa), type_: TokenType(0000000000000000000000000000000000000000000000000000000000000000), value: 1000000 } segment=0 target_cpk=PublicKey(2a96548ae0ef6689dbfb02452a68f0097430b3508213e689ab809bc634b455b5) ciph=Some(CoinCiphertext { c: JubjubSubgroup(JubjubExtended { u: Scalar(0x5f8c61576fefc2d5d0e1b721ab57f0c3c149711f773f503c435a54215b554d9f), v: Scalar(0x267edcf622bbd3e4068ae2cf60a8e4ec14c4e7787ad2637dae50493ac615d67f), z: Scalar(0x08395bfafc2375c1a2b977d63e0780ad64c5da315e5f9e7e27bf89f4f3618b9b), t1: Scalar(0x56a484c528abf007763650c4d715373b68e58ef9d82dffa5c136a0724ed46910), t2: Scalar(0x067350290565b91916ca9454bb59492012bf46df871a1cc70ccafe9bb99ab0ed) }), ciph: [b6be3762bcbb7d921a871a8c2bf34da977bd369db04e4586c954cf7e5739f960, d06edf5819a1c0eda742d2e1f454fbc0e1760b40a4faa6f28ca951ab867ff33a, 8544acd83ae9a53c5d8d26f8e1e343bd71d311c0d96766aa3e78eae03cc32569, f498d552770ed2f9bd96314cbd1eb39d4e2ca50c4cf839cd21ee38b6aa41302e, ae9bba7cdba7ef90fb14a11fd99a196ba33f59c2046d2f447caed619dd537644, e03bbdeb131c40bb13ac41b9f65c7120efa7ab33b975358592acabdb9a5e9762] })}: creating new contract-owned output coin
+2025-06-19T11:14:36.816416Z  INFO Proof generation completed successfully
+2025-06-19T11:14:36.816444Z  INFO Prove transaction: StandardTransaction {
     guaranteed_coins: {
         inputs: [
             <shielded input Nullifier(20334f507349909c81cb99042e5ec06eb9024904a53c19307cae61ca953b76a4)>,
         ],
         outputs: [
-            <shielded output Commitment(ddfacb98eb592da590d927f1d45c4ef2648018dd5c57b105f4532be05bdbab34)>,
+            <shielded output Commitment(2c31c43296f1176a3525fe6f51deb833538febe6cecfa16e04c78d45d8bf05bd)>,
         ],
         transient: [],
         deltas: [
-            TokenType(0000000000000000000000000000000000000000000000000000000000000000) -> 999999000,
+            TokenType(0000000000000000000000000000000000000000000000000000000000000000) -> 999000000,
         ],
     },
     fallible_coins: None,
     contract_calls: None,
-    binding_randomness: 5de3e730f2149b596267bc10e9cd5452a6d21bc9c160ed881564653f3289d6,
+    binding_randomness: be979722688bf738030046b4e2564783ae250e76bcd6f46d463b83ca2c9aa80b,
 }
-18:54:13 [INFO] Validating proven transaction with well_formed check...
-18:54:13 [INFO] ✅ Transaction passed well_formed validation
-18:54:13 [INFO] Created transaction
-18:54:13 [INFO] Sending transaction
-18:54:13 [INFO] SENDING
-18:54:14 [INFO] SENT
-18:54:17 [INFO] BEST_BLOCK - Block hash: 0x443c334b3d8a2a71a58def2d219008b6e0fb992f2d73efad1fd497904c8d69cd
-18:54:18 [ERROR] ❌ Transaction failed in best block: Runtime(Module(ModuleError(<Midnight::Transaction>)))
-18:54:18 [ERROR] ❌ Runtime error details: Module(ModuleError(<Midnight::Transaction>))
-18:54:18 [ERROR] ❌ Module error details: ModuleError(<Midnight::Transaction>)
-18:54:18 [ERROR] ❌ Raw error bytes: [05, 03, 00, 03, 00]
-18:54:18 [ERROR] ❌ Pallet index: 5, Error index: 3
-18:54:18 [ERROR] Decoding Midnight::Transaction nested error...
-18:54:18 [ERROR] TransactionError variant index: 0
-18:54:18 [ERROR] Specific error: Invalid(InvalidError)
-18:54:18 [ERROR] InvalidError variant index: 3
-18:54:18 [ERROR] InvalidError: Zswap
-18:54:18 [ERROR] ❌ Metadata - pallet: Midnight, variant: Transaction, error: 3
-18:54:31 [INFO] FINALIZED - Block hash: 0x443c334b3d8a2a71a58def2d219008b6e0fb992f2d73efad1fd497904c8d69cd
-18:54:31 [ERROR] ❌ Transaction failed in finalized block: Runtime(Module(ModuleError(<Midnight::Transaction>)))
-18:54:31 [ERROR] ❌ Finalized block - Module error details: ModuleError(<Midnight::Transaction>)
-18:54:31 [ERROR] ❌ Finalized block - pallet: Midnight, variant: Transaction, error: 3
-18:54:31 [INFO] TRANSACTION HASH: 0xfd4aca0bb6a654bdf649d122c91914670661abc82b7aaa38cbdd20db1bee937d
-18:54:31 [INFO] Transaction submitted successfully via Subxt
-18:54:31 [INFO] StandardTransaction {
+2025-06-19T11:14:36.816495Z  INFO Validating proven transaction with well_formed check...
+2025-06-19T11:14:36.873380Z  INFO Transaction passed well_formed validation
+2025-06-19T11:14:36.873426Z  INFO Created transaction
+2025-06-19T11:14:36.873430Z  INFO Sending transaction
+2025-06-19T11:14:36.877606Z  INFO SENDING
+2025-06-19T11:14:37.302381Z  INFO SENT
+2025-06-19T11:14:41.861526Z  INFO BEST_BLOCK - Block hash: 0x8a6be37709d0ecc8ff2719df6856707dae9162c1c01c454ac1b410a409bfa69c
+2025-06-19T11:14:42.135441Z ERROR Transaction failed in best block: Runtime(Module(ModuleError(<Midnight::Transaction>)))
+2025-06-19T11:14:42.135505Z ERROR Runtime error details: Module(ModuleError(<Midnight::Transaction>))
+2025-06-19T11:14:42.135534Z ERROR Module error details: ModuleError(<Midnight::Transaction>)
+2025-06-19T11:14:42.135603Z ERROR Raw error bytes: [05, 03, 00, 03, 00]
+2025-06-19T11:14:42.135624Z ERROR Pallet index: 5, Error index: 3
+2025-06-19T11:14:42.135638Z ERROR Decoding Midnight::Transaction nested error...
+2025-06-19T11:14:42.135650Z ERROR TransactionError variant index: 0
+2025-06-19T11:14:42.135662Z ERROR Specific error: Invalid(InvalidError)
+2025-06-19T11:14:42.135674Z ERROR InvalidError variant index: 3
+2025-06-19T11:14:42.135686Z ERROR InvalidError: Zswap
+2025-06-19T11:14:42.135744Z ERROR Metadata - pallet: Midnight, variant: Transaction, error: 3
+2025-06-19T11:14:55.464477Z  INFO FINALIZED - Block hash: 0x8a6be37709d0ecc8ff2719df6856707dae9162c1c01c454ac1b410a409bfa69c
+2025-06-19T11:14:55.739083Z ERROR Transaction failed in finalized block: Runtime(Module(ModuleError(<Midnight::Transaction>)))
+2025-06-19T11:14:55.739210Z ERROR Finalized block - Module error details: ModuleError(<Midnight::Transaction>)
+2025-06-19T11:14:55.739255Z ERROR Finalized block - pallet: Midnight, variant: Transaction, error: 3
+2025-06-19T11:14:55.739287Z  INFO TRANSACTION HASH: 0xcc379986d7755ff9fcfe8b546dd27677c1f7a38c5c8a9371ebdcb61ddc3a914f
+2025-06-19T11:14:55.739314Z  INFO Transaction submitted successfully via Subxt
+2025-06-19T11:14:55.739336Z  INFO StandardTransaction {
     guaranteed_coins: {
         inputs: [
             <shielded input Nullifier(20334f507349909c81cb99042e5ec06eb9024904a53c19307cae61ca953b76a4)>,
         ],
         outputs: [
-            <shielded output Commitment(ddfacb98eb592da590d927f1d45c4ef2648018dd5c57b105f4532be05bdbab34)>,
+            <shielded output Commitment(2c31c43296f1176a3525fe6f51deb833538febe6cecfa16e04c78d45d8bf05bd)>,
         ],
         transient: [],
         deltas: [
-            TokenType(0000000000000000000000000000000000000000000000000000000000000000) -> 999999000,
+            TokenType(0000000000000000000000000000000000000000000000000000000000000000) -> 999000000,
         ],
     },
     fallible_coins: None,
     contract_calls: None,
-    binding_randomness: 5de3e730f2149b596267bc10e9cd5452a6d21bc9c160ed881564653f3289d6,
+    binding_randomness: be979722688bf738030046b4e2564783ae250e76bcd6f46d463b83ca2c9aa80b,
 }
 ```

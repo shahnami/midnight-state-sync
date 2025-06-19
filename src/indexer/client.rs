@@ -9,6 +9,7 @@ use tokio_tungstenite::{
 	connect_async,
 	tungstenite::{Message, client::IntoClientRequest},
 };
+use tracing::{debug, error, info};
 
 /// Midnight GraphQL indexer client
 #[derive(Clone)]
@@ -38,7 +39,7 @@ impl MidnightIndexerClient {
 		&self,
 		viewing_key: &ViewingKeyFormat,
 	) -> Result<String, IndexerError> {
-		log::info!(
+		info!(
 			"Connecting wallet with viewing key: {}",
 			viewing_key.as_str()
 		);
@@ -62,7 +63,7 @@ impl MidnightIndexerClient {
 			.ok_or_else(|| IndexerError::NoData)?
 			.to_string();
 
-		log::info!("Established wallet session: {}", session_id);
+		info!("Established wallet session: {}", session_id);
 		Ok(session_id)
 	}
 
@@ -78,7 +79,7 @@ impl MidnightIndexerClient {
 		>,
 		IndexerError,
 	> {
-		log::debug!("Attempting WebSocket connection to: {}", self.ws_url);
+		debug!("Attempting WebSocket connection to: {}", self.ws_url);
 
 		// Create WebSocket request with required subprotocol
 		let mut request = self.ws_url.clone().into_client_request()?;
@@ -90,7 +91,7 @@ impl MidnightIndexerClient {
 		);
 
 		let (ws_stream, response) = connect_async(request).await?;
-		log::debug!(
+		debug!(
 			"WebSocket connection established, response status: {}",
 			response.status()
 		);
@@ -195,7 +196,7 @@ impl MidnightIndexerClient {
 											.and_then(|p| p.get("data"))
 											.and_then(|d| d.get("wallet"))
 										{
-											log::debug!(
+											debug!(
 												"Raw wallet data: {}",
 												serde_json::to_string_pretty(&wallet_data)
 													.unwrap_or_else(|_| "Invalid JSON".to_string())
@@ -205,11 +206,11 @@ impl MidnightIndexerClient {
 											) {
 												Ok(event) => Some(Ok(event)),
 												Err(e) => {
-													log::error!(
+													error!(
 														"Failed to deserialize wallet event: {}",
 														e
 													);
-													log::error!(
+													error!(
 														"Raw data was: {}",
 														serde_json::to_string_pretty(&wallet_data)
 															.unwrap_or_else(
@@ -232,11 +233,11 @@ impl MidnightIndexerClient {
 										Some(Err(IndexerError::GraphQLError(error_msg.to_string())))
 									}
 									"complete" => {
-										log::info!("Wallet subscription completed");
+										info!("Wallet subscription completed");
 										None // End the stream
 									}
 									_ => {
-										log::debug!("Ignoring message type: {}", msg_type);
+										debug!("Ignoring message type: {}", msg_type);
 										None // Skip other message types
 									}
 								}

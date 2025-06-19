@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use backoff::{future::retry, ExponentialBackoff};
+use backoff::{ExponentialBackoff, future::retry};
 
 use midnight_node_ledger_helpers::*;
 
@@ -52,16 +52,22 @@ impl<D: DB> ProofProvider<D> for RemoteProofServer {
 			.join("prove-tx")
 			.unwrap();
 
-		println!("Proof server URL: {}", url);
-
-		let client = reqwest::ClientBuilder::new().pool_idle_timeout(None).build().unwrap();
+		let client = reqwest::ClientBuilder::new()
+			.pool_idle_timeout(None)
+			.build()
+			.unwrap();
 		let response_bytes = retry(ExponentialBackoff::default(), || async {
 			let body = self.serialize_request_body(&tx, resolver).await;
 
-			let resp = client.post(url.clone()).body(body).send().await.map_err(|e| {
-				println!("Proof Server Send Error: {:?}", e);
-				backoff::Error::transient(e)
-			})?;
+			let resp = client
+				.post(url.clone())
+				.body(body)
+				.send()
+				.await
+				.map_err(|e| {
+					println!("Proof Server Send Error: {:?}", e);
+					backoff::Error::transient(e)
+				})?;
 
 			let resp_err = resp.error_for_status_ref().err();
 			let resp_bytes = resp.bytes().await.map_err(|e| {
@@ -70,7 +76,10 @@ impl<D: DB> ProofProvider<D> for RemoteProofServer {
 			})?;
 
 			if let Some(e) = resp_err {
-				println!("Proof Server Response Error: {:?}. Bytes: {:?}", e, resp_bytes);
+				println!(
+					"Proof Server Response Error: {:?}. Bytes: {:?}",
+					e, resp_bytes
+				);
 				return Err(backoff::Error::transient(e));
 			}
 

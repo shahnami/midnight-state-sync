@@ -5,6 +5,7 @@ use subxt::{
 	OnlineClient, PolkadotConfig,
 	tx::{TxInBlock, TxProgress},
 };
+use tracing::{error, info};
 
 // Import error types for proper error handling
 use subxt::error::DispatchError;
@@ -53,14 +54,14 @@ where
 		let unsigned_extrinsic = self.api.tx().create_unsigned(&mn_tx)?;
 		let tx_hash_string = format!("0x{}", hex::encode(unsigned_extrinsic.hash().as_bytes()));
 
-		log::info!("SENDING");
+		info!("SENDING");
 		let tx_progress = self
 			.api
 			.tx()
 			.create_unsigned(&mn_tx)?
 			.submit_and_watch()
 			.await?;
-		log::info!("SENT");
+		info!("SENT");
 		Ok((tx_hash_string, tx_progress))
 	}
 
@@ -97,99 +98,93 @@ where
 	) {
 		let (progress, best_block) = Self::wait_for_best_block(tx).await;
 		if best_block.is_none() {
-			log::info!("FAILED_TO_REACH_BEST_BLOCK");
+			info!("FAILED_TO_REACH_BEST_BLOCK");
 			return;
 		}
 		let best_block = best_block.unwrap();
 		let best_block_hash = best_block.block_hash();
-		log::info!("BEST_BLOCK - Block hash: {:?}", best_block_hash);
+		info!("BEST_BLOCK - Block hash: {:?}", best_block_hash);
 
 		// Check for ExtrinsicFailed events in the best block
 		if let Err(e) = best_block.wait_for_success().await {
-			log::error!("❌ Transaction failed in best block: {:?}", e);
+			error!("Transaction failed in best block: {:?}", e);
 
 			// Try to extract more detailed error information
 			match e {
 				subxt::Error::Runtime(runtime_error) => {
-					log::error!("❌ Runtime error details: {:?}", runtime_error);
+					error!("Runtime error details: {:?}", runtime_error);
 
 					// Extract specific error details for Midnight::Transaction errors
 					match &runtime_error {
 						DispatchError::Module(module_error) => {
-							log::error!("❌ Module error details: {:?}", module_error);
+							error!("Module error details: {:?}", module_error);
 
 							// Access raw error bytes to decode nested error
 							let error_bytes = module_error.bytes();
-							log::error!("❌ Raw error bytes: {:02x?}", error_bytes);
-							log::error!(
-								"❌ Pallet index: {}, Error index: {}",
-								error_bytes[0],
-								error_bytes[1]
+							error!("Raw error bytes: {:02x?}", error_bytes);
+							error!(
+								"Pallet index: {}, Error index: {}",
+								error_bytes[0], error_bytes[1]
 							);
 
 							// Decode the specific nested error for Midnight::Transaction
 							if error_bytes[0] == 5 && error_bytes[1] == 3 {
 								// Midnight pallet (5), Transaction error (3)
-								log::error!("Decoding Midnight::Transaction nested error...");
+								error!("Decoding Midnight::Transaction nested error...");
 
 								// bytes[2] should contain the TransactionError variant index
 								let transaction_error_index = error_bytes[2];
-								log::error!(
+								error!(
 									"TransactionError variant index: {}",
 									transaction_error_index
 								);
 
 								match transaction_error_index {
 									0 => {
-										log::error!("Specific error: Invalid(InvalidError)");
+										error!("Specific error: Invalid(InvalidError)");
 										// bytes[3] contains the InvalidError variant
 										let invalid_error_index = error_bytes[3];
-										log::error!(
+										error!(
 											"InvalidError variant index: {}",
 											invalid_error_index
 										);
 
 										match invalid_error_index {
-											0 => log::error!("InvalidError: EffectsMismatch"),
+											0 => error!("InvalidError: EffectsMismatch"),
 											1 => {
-												log::error!("InvalidError: ContractAlreadyDeployed")
+												error!("InvalidError: ContractAlreadyDeployed")
 											}
-											2 => log::error!("InvalidError: ContractNotPresent"),
-											3 => log::error!("InvalidError: Zswap"),
-											4 => log::error!("InvalidError: Transcript"),
-											5 => log::error!("InvalidError: InsufficientClaimable"),
+											2 => error!("InvalidError: ContractNotPresent"),
+											3 => error!("InvalidError: Zswap"),
+											4 => error!("InvalidError: Transcript"),
+											5 => error!("InvalidError: InsufficientClaimable"),
 											6 => {
-												log::error!("InvalidError: VerifierKeyNotFound")
+												error!("InvalidError: VerifierKeyNotFound")
 											}
-											7 => log::error!(
-												"InvalidError: VerifierKeyAlreadyPresent"
-											),
-											8 => log::error!("InvalidError: ReplayCounterMismatch"),
-											9 => log::error!("InvalidError: UnknownError"),
-											_ => log::error!(
+											7 => error!("InvalidError: VerifierKeyAlreadyPresent"),
+											8 => error!("InvalidError: ReplayCounterMismatch"),
+											9 => error!("InvalidError: UnknownError"),
+											_ => error!(
 												"InvalidError: Unknown variant {}",
 												invalid_error_index
 											),
 										}
 									}
 									1 => {
-										log::error!("Specific error: Malformed(MalformedError)");
-										log::error!(
-											"MalformedError variant index: {}",
-											error_bytes[3]
-										);
+										error!("Specific error: Malformed(MalformedError)");
+										error!("MalformedError variant index: {}", error_bytes[3]);
 									}
 									2 => {
-										log::error!(
+										error!(
 											"Specific error: SystemTransaction(SystemTransactionError)"
 										);
-										log::error!(
+										error!(
 											"SystemTransactionError variant index: {}",
 											error_bytes[3]
 										);
 									}
 									_ => {
-										log::error!(
+										error!(
 											"Unknown TransactionError variant: {}",
 											transaction_error_index
 										);
@@ -199,8 +194,8 @@ where
 
 							// Also try to get metadata details if available
 							if let Ok(details) = module_error.details() {
-								log::error!(
-									"❌ Metadata - pallet: {}, variant: {}, error: {:?}",
+								error!(
+									"Metadata - pallet: {}, variant: {}, error: {:?}",
 									details.pallet.name(),
 									details.variant.name,
 									details.variant.index
@@ -208,40 +203,40 @@ where
 							}
 						}
 						_ => {
-							log::error!("❌ Non-module runtime error: {:?}", runtime_error);
+							error!("Non-module runtime error: {:?}", runtime_error);
 						}
 					}
 				}
 				_ => {
-					log::error!("❌ Non-runtime error: {:?}", e);
+					error!("Non-runtime error: {:?}", e);
 				}
 			}
 		} else {
-			log::info!("✅ Transaction succeeded in best block");
+			info!("Transaction succeeded in best block");
 		}
 
 		let finalized = Self::wait_for_finalized(progress).await;
 		match finalized {
 			Some(finalized_block) => {
 				let finalized_block_hash = finalized_block.block_hash();
-				log::info!("FINALIZED - Block hash: {:?}", finalized_block_hash);
+				info!("FINALIZED - Block hash: {:?}", finalized_block_hash);
 
 				// Check for ExtrinsicFailed events in the finalized block as well
 				if let Err(e) = finalized_block.wait_for_success().await {
-					log::error!("❌ Transaction failed in finalized block: {:?}", e);
+					error!("Transaction failed in finalized block: {:?}", e);
 
 					// Extract detailed error information for finalized block as well
 					match e {
 						subxt::Error::Runtime(runtime_error) => match &runtime_error {
 							DispatchError::Module(module_error) => {
-								log::error!(
-									"❌ Finalized block - Module error details: {:?}",
+								error!(
+									"Finalized block - Module error details: {:?}",
 									module_error
 								);
 
 								if let Ok(details) = module_error.details() {
-									log::error!(
-										"❌ Finalized block - pallet: {}, variant: {}, error: {:?}",
+									error!(
+										"Finalized block - pallet: {}, variant: {}, error: {:?}",
 										details.pallet.name(),
 										details.variant.name,
 										details.variant.index
@@ -249,24 +244,24 @@ where
 								}
 							}
 							_ => {
-								log::error!(
-									"❌ Finalized block - Non-module runtime error: {:?}",
+								error!(
+									"Finalized block - Non-module runtime error: {:?}",
 									runtime_error
 								);
 							}
 						},
 						_ => {
-							log::error!("❌ Finalized block - Non-runtime error: {:?}", e);
+							error!("Finalized block - Non-runtime error: {:?}", e);
 						}
 					}
 				} else {
-					log::info!("✅ Transaction succeeded in finalized block");
+					info!("Transaction succeeded in finalized block");
 				}
 			}
 			None => {
-				log::info!("FAILED_TO_FINALIZE");
+				info!("FAILED_TO_FINALIZE");
 			}
 		}
-		log::info!("TRANSACTION HASH: {}", tx_hash);
+		info!("TRANSACTION HASH: {}", tx_hash);
 	}
 }

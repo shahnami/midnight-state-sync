@@ -10,6 +10,7 @@ use midnight_node_ledger_helpers::{
 use rand::Rng;
 use std::sync::Arc;
 use subxt::{OnlineClient, PolkadotConfig};
+use tracing::{error, info};
 
 use crate::transaction::{
 	builder::TransactionError,
@@ -19,16 +20,24 @@ use crate::utils::format_token_amount;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-	// Initialize logging
-	simplelog::TermLogger::init(
-		simplelog::LevelFilter::Info,
-		simplelog::Config::default(),
-		simplelog::TerminalMode::Mixed,
-		simplelog::ColorChoice::Auto,
-	)
-	.unwrap();
+	// Initialize tracing subscriber with debug logging for midnight crates
+	tracing_subscriber::fmt()
+		.with_env_filter(
+			tracing_subscriber::EnvFilter::from_default_env()
+				.add_directive("midnight_node_ledger_helpers=debug".parse().unwrap())
+				.add_directive("midnight_ledger_prototype=debug".parse().unwrap())
+				.add_directive("midnight_zswap=debug".parse().unwrap())
+				.add_directive(tracing::Level::INFO.into()),
+		)
+		.with_target(false)
+		.with_thread_ids(false)
+		.with_thread_names(false)
+		.with_file(false)
+		.with_line_number(false)
+		.with_timer(tracing_subscriber::fmt::time::time())
+		.init();
 
-	log::info!("Starting wallet sync service");
+	info!("Starting wallet sync service");
 	let network = NetworkId::TestNet;
 
 	let client = OnlineClient::<PolkadotConfig>::from_url("wss://rpc.testnet-02.midnight.network")
@@ -42,7 +51,7 @@ async fn main() {
 		"wss://indexer.testnet-02.midnight.network/api/v1/graphql/ws".to_string(),
 	);
 
-	log::info!("Created indexer client");
+	info!("Created indexer client");
 
 	// Create proof provider
 	let proof_provider = Box::new(RemoteProofServer::new(
@@ -50,7 +59,7 @@ async fn main() {
 		network,
 	));
 
-	log::info!("Created proof provider");
+	info!("Created proof provider");
 
 	let seed = "2e347e236daa04faad881f1dc5dc3b8a9b4e8e4429e9d0728aad78ada199b66b".to_string(); //wallet::generate_random_seed();
 	let wallet_seed = WalletSeed::from(seed.as_str());
@@ -66,7 +75,7 @@ async fn main() {
 		destination_wallet_seed,
 	]));
 
-	log::info!("Created context");
+	info!("Created context");
 
 	let wallet_sync_service = wallet::MidnightWalletSyncService::new(
 		indexer_client,
@@ -79,19 +88,19 @@ async fn main() {
 	let mut wallet_sync_service = match wallet_sync_service {
 		Ok(service) => service,
 		Err(e) => {
-			println!("Failed to start wallet sync service: {:?}", e);
+			error!("Failed to start wallet sync service: {:?}", e);
 			return;
 		}
 	};
 
-	log::info!("Created wallet sync service");
+	info!("Created wallet sync service");
 
 	// Syncs the latest updates and stores in service
 	wallet_sync_service
 		.sync_to_latest()
 		.await
 		.map_err(|e| {
-			println!("Failed to sync wallet: {:?}", e);
+			error!("Failed to sync wallet: {:?}", e);
 		})
 		.unwrap();
 
@@ -99,7 +108,7 @@ async fn main() {
 		.apply_collapsed_updates()
 		.await
 		.map_err(|e| {
-			println!("Failed to apply collapsed updates: {:?}", e);
+			error!("Failed to apply collapsed updates: {:?}", e);
 		})
 		.unwrap();
 
@@ -107,13 +116,13 @@ async fn main() {
 		.apply_transactions()
 		.await
 		.map_err(|e| {
-			println!("Failed to apply transactions: {:?}", e);
+			error!("Failed to apply transactions: {:?}", e);
 		})
 		.unwrap();
 
 	// Get current balance from wallet sync
 	let available_utxo_value = wallet_sync_service.get_current_balance().await;
-	log::info!(
+	info!(
 		"Retrieved wallet balance: {} tDUST",
 		format_token_amount(available_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
 	);
@@ -133,17 +142,17 @@ async fn main() {
 	.await
 	.unwrap();
 
-	log::info!("Created transaction");
+	info!("Created transaction");
 
-	log::info!("Sending transaction");
+	info!("Sending transaction");
 
 	match sender.send_tx(&transaction).await {
 		Ok(()) => {
-			log::info!("Transaction submitted successfully via Subxt");
-			log::info!("{:#?}", transaction);
+			info!("Transaction submitted successfully via Subxt");
+			info!("{:#?}", transaction);
 		}
 		Err(e) => {
-			log::error!("Failed to submit transaction via Subxt: {}", e);
+			error!("Failed to submit transaction via Subxt: {}", e);
 		}
 	}
 }
@@ -158,7 +167,7 @@ pub async fn make_simple_transfer(
 	token_type: TokenType,
 	proof_provider: Box<dyn ProofProvider<DefaultDB>>,
 ) -> Result<Transaction<Proof, DefaultDB>, TransactionError> {
-	log::info!("Starting simple transfer with wallet sync");
+	info!("Starting simple transfer with wallet sync");
 	// // Calculate transaction fees first to validate total requirement
 	// let estimated_fee =
 	// 	midnight_node_ledger_helpers::Wallet::<MidnightDefaultDB>::calculate_fee(1, 1);
@@ -180,34 +189,13 @@ pub async fn make_simple_transfer(
 			format_token_amount(available_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
 		)));
 	}
-	log::info!(
+	info!(
 		"Amount validated successfully (including {} tDUST fee)",
 		format_token_amount(actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);
 
-	// ============================================
-	// UTXO SELECTION AND VERIFICATION
-	// ============================================
-	log::info!("=== UTXO SELECTION PROCESS ===");
-
 	// First, find the actual UTXO that will be spent to get its exact value
 	let from_wallet = context.wallet_from_seed(from_wallet_seed);
-
-	// Log the wallet state before UTXO selection
-	log::info!(
-		"   - Total coins: {}",
-		from_wallet.state.coins.iter().count()
-	);
-	for (idx, (nullifier, qualified_coin_info)) in from_wallet.state.coins.iter().enumerate() {
-		let coin_info: midnight_node_ledger_helpers::CoinInfo = (&*qualified_coin_info).into();
-		log::info!(
-			"   - Coin {}: value={} tDUST, type={:?}, nullifier={:?}",
-			idx + 1,
-			format_token_amount(coin_info.value, transaction::MIDNIGHT_TOKEN_DECIMALS),
-			coin_info.type_,
-			nullifier
-		);
-	}
 
 	// Create a temporary input_info to find the minimum UTXO
 	let temp_input_info = InputInfo::<WalletSeed> {
@@ -216,28 +204,21 @@ pub async fn make_simple_transfer(
 		value: amount + actual_fee, // Minimum amount needed including fees
 	};
 
-	log::info!(
-		"Searching for UTXO with minimum value: {} tDUST (amount: {} tDUST + fee: {} tDUST)",
-		format_token_amount(amount + actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS),
-		format_token_amount(amount, transaction::MIDNIGHT_TOKEN_DECIMALS),
-		format_token_amount(actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS)
-	);
-
 	// Find the actual UTXO that will be selected
 	let selected_coin = temp_input_info.min_match_coin(&from_wallet.state);
 	let actual_utxo_value = selected_coin.value;
 
-	log::info!("Selected UTXO details:");
-	log::info!(
+	info!("Selected UTXO details:");
+	info!(
 		"   - Value: {} tDUST",
 		format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);
-	log::info!("   - Type: {:?}", selected_coin.type_);
-	log::info!("   - Nonce: {:?}", selected_coin.nonce);
+	info!("   - Type: {:?}", selected_coin.type_);
+	info!("   - Nonce: {:?}", selected_coin.nonce);
 
 	// Verify the selected UTXO has sufficient value
 	if actual_utxo_value < amount + actual_fee {
-		log::error!(
+		error!(
 			"Selected UTXO value {} tDUST is insufficient for amount {} tDUST + fee {} tDUST = {} tDUST",
 			format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
 			format_token_amount(amount, transaction::MIDNIGHT_TOKEN_DECIMALS),
@@ -253,7 +234,7 @@ pub async fn make_simple_transfer(
 		)));
 	}
 
-	log::info!(
+	info!(
 		"Found UTXO with value: {} tDUST (requested minimum: {} tDUST including {} tDUST fee)",
 		format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
 		format_token_amount(amount + actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS),
@@ -268,7 +249,7 @@ pub async fn make_simple_transfer(
 		value: actual_utxo_value, // Use the exact value of the selected UTXO
 	};
 
-	log::info!(
+	info!(
 		"Input info: {{origin: {:?}, token_type: {:?}, value: {} tDUST (actual UTXO value)}}",
 		from_wallet_seed,
 		token_type,
@@ -282,40 +263,11 @@ pub async fn make_simple_transfer(
 		value: amount,
 	};
 
-	log::info!(
+	info!(
 		"Recipient output: {{destination: {:?}, token_type: {:?}, value: {} tDUST}}",
 		to_wallet_seed,
 		token_type,
 		format_token_amount(amount, transaction::MIDNIGHT_TOKEN_DECIMALS)
-	);
-
-	let change_value = actual_utxo_value.saturating_sub(amount);
-
-	log::info!("=== TRANSACTION OFFER SUMMARY ===");
-	log::info!("Guaranteed offer created with:");
-	log::info!(
-		"   INPUT:  value={} tDUST, origin={:?}",
-		format_token_amount(input_info.value, transaction::MIDNIGHT_TOKEN_DECIMALS),
-		input_info.origin
-	);
-	log::info!(
-		"   OUTPUT: value={} tDUST, destination={:?}",
-		format_token_amount(recipient_output.value, transaction::MIDNIGHT_TOKEN_DECIMALS),
-		recipient_output.destination
-	);
-	log::info!(
-		"   Change: {} tDUST (will be handled automatically by midnight-node)",
-		format_token_amount(change_value, transaction::MIDNIGHT_TOKEN_DECIMALS)
-	);
-	log::info!(
-		"   Fee: {} tDUST (estimated, actual will be calculated by midnight-node)",
-		format_token_amount(actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS)
-	);
-	log::info!(
-		"   Balance check: {} tDUST input >= {} tDUST output + {} tDUST change + fee ✓",
-		format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
-		format_token_amount(amount, transaction::MIDNIGHT_TOKEN_DECIMALS),
-		format_token_amount(change_value, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);
 
 	// Create the guaranteed offer with input and recipient output
@@ -342,7 +294,6 @@ pub async fn make_simple_transfer(
 	for (i, &byte) in timestamp_bytes.iter().enumerate() {
 		rng_seed[i] ^= byte;
 	}
-	log::info!("RNG seed generated successfully with timestamp mixing for uniqueness");
 
 	// Build and return the transaction
 	transaction::builder::MidnightTransactionBuilder::<DefaultDB>::new()

@@ -11,6 +11,7 @@ use midnight_node_ledger_helpers::{
 use serde::Serialize;
 use std::sync::Arc;
 use thiserror::Error;
+use tracing::{error, info};
 
 #[derive(Error, Debug, Serialize)]
 pub enum TransactionError {
@@ -76,7 +77,7 @@ impl<D: DB> MidnightTransactionBuilder<D> {
 
 	/// Builds the final transaction
 	pub async fn build(self) -> Result<Transaction<Proof, D>, TransactionError> {
-		log::info!("Starting transaction build process");
+		info!("Starting transaction build process");
 
 		let context_arc = self.context.unwrap();
 
@@ -84,40 +85,41 @@ impl<D: DB> MidnightTransactionBuilder<D> {
 		let rng_seed = self.rng_seed.unwrap();
 
 		// Create StandardTrasactionInfo with the context
-		log::info!("Creating StandardTransactionInfo with context...");
+		info!("Creating StandardTransactionInfo with context...");
 		let mut tx_info = MidnightStandardTransactionInfo::new_from_context(
 			context_arc.clone(),
 			proof_provider.into(),
 			Some(rng_seed),
 		);
-		log::info!("StandardTransactionInfo created successfully");
+		info!("StandardTransactionInfo created successfully");
 
 		// Set the guaranteed offer if present
 		if let Some(offer) = self.guaranteed_offer {
-			log::info!("Setting guaranteed offer...");
+			info!("Setting guaranteed offer...");
 			tx_info.set_guaranteed_coins(offer);
-			log::info!("Guaranteed offer set successfully");
+			info!("Guaranteed offer set successfully");
 		}
 
 		// Set the intent info if present to preserve segment information
 		if let Some(intent) = self.intent_info {
-			log::info!("Setting intent info...");
+			info!("Setting intent info...");
 			tx_info.set_intents(vec![intent]);
-			log::info!("Intent info set successfully");
+			info!("Intent info set successfully");
 		}
 
+		// Build the transaction
+		info!("Building transaction...");
 		let built_tx = tx_info.build().await;
-		log::info!("Built transaction: {:#?}", built_tx);
+		info!("Built transaction: {:#?}", built_tx);
 
 		// Generate proofs
-		log::info!("Starting proof generation...");
+		info!("Starting proof generation...");
 		let proven_tx = tx_info.prove().await;
-		log::info!("Proof generation completed successfully");
-
-		log::info!("Prove transaction: {:#?}", proven_tx);
+		info!("Proof generation completed successfully");
+		info!("Prove transaction: {:#?}", proven_tx);
 
 		// Validate the proven transaction with well_formed check
-		log::info!("Validating proven transaction with well_formed check...");
+		info!("Validating proven transaction with well_formed check...");
 
 		// Get the ledger state from the context (it's wrapped in a Mutex)
 		let ledger_state_guard = context_arc.ledger_state.lock().unwrap();
@@ -125,20 +127,17 @@ impl<D: DB> MidnightTransactionBuilder<D> {
 		let ref_state = &*ledger_state_guard;
 
 		// Perform well_formed validation
-		match proven_tx.well_formed(ref_state, WellFormedStrictness::default()) {
-			Ok(()) => {
-				log::info!("✅ Transaction passed well_formed validation");
-			}
-			Err(e) => {
-				log::error!("Transaction failed well_formed validation: {:?}", e);
-				return Err(TransactionError::ValidationError(format!(
+		proven_tx
+			.well_formed(ref_state, WellFormedStrictness::default())
+			.map_err(|e| {
+				error!("Transaction failed well_formed validation: {:?}", e);
+				TransactionError::ValidationError(format!(
 					"Transaction failed well_formed validation: {:?}",
 					e
-				)));
-			}
-		}
+				))
+			})?;
 
-		// Return the proven transaction directly
+		info!("Transaction passed well_formed validation");
 		Ok(proven_tx)
 	}
 }

@@ -16,6 +16,7 @@ use midnight_node_ledger_helpers::{
 };
 use midnight_serialize::deserialize;
 use std::sync::Arc;
+use tracing::{debug, error, info, warn};
 
 pub struct MidnightWalletSyncService {
 	indexer_client: MidnightIndexerClient,
@@ -105,12 +106,11 @@ impl MidnightWalletSyncService {
 				WalletSyncError::SessionError(format!("Failed to connect wallet: {}", e))
 			})?;
 
-		log::info!("Established wallet session: {}", session_id);
+		info!("Established wallet session: {}", session_id);
 		Ok(session_id)
 	}
 
 	pub async fn apply_transactions(&self) -> Result<(), WalletSyncError> {
-		// self.apply_historical_transactions_to_merkle_tree(&transactions)?;
 		self.context.update_from_txs(&self.processed_transactions);
 		Ok(())
 	}
@@ -133,7 +133,7 @@ impl MidnightWalletSyncService {
 					// Update first_free to be after the last applied index
 					context_ledger_state_guard.zswap.first_free = collapsed_update.end + 1;
 
-					log::info!(
+					info!(
 						"Successfully applied collapsed update: start={}, end={}, new first_free={}, tree_height_after={}, root changed: {:?} -> {:?}",
 						collapsed_update.start,
 						collapsed_update.end,
@@ -144,7 +144,7 @@ impl MidnightWalletSyncService {
 					);
 				}
 				Err(e) => {
-					log::error!("Failed to apply collapsed update: {}", e);
+					error!("Failed to apply collapsed update: {}", e);
 				}
 			}
 		}
@@ -158,10 +158,9 @@ impl MidnightWalletSyncService {
 		// Just hardcode to 0 for now
 		let start_index = 0;
 
-		log::info!(
+		info!(
 			"Starting wallet sync from index {} using session {}",
-			start_index,
-			session_id
+			start_index, session_id
 		);
 
 		// Subscribe to wallet events
@@ -186,7 +185,7 @@ impl MidnightWalletSyncService {
 					last_event_time = tokio::time::Instant::now();
 			match event_result {
 				Ok(event) => {
-					log::info!("Processing event: {:#?}", event);
+					info!("Processing event: {:#?}", event);
 					match event {
 						WalletSyncEvent::ViewingUpdate {
 							type_name: _,
@@ -202,7 +201,7 @@ impl MidnightWalletSyncService {
 										end,
 									} => {
 										// Determine the correct Merkle tree index
-										log::info!(
+										info!(
 											"Processing transaction - blockchain_index: {}, mt_start: {}, mt_end: {}",
 											index, start, end
 										);
@@ -210,7 +209,7 @@ impl MidnightWalletSyncService {
 										self.process_relevant_transaction(transaction).await?;
 
 										events_processed += 1;
-										log::debug!(
+										debug!(
 											"Processed relevant transaction at index {}",
 											index
 										);
@@ -222,14 +221,14 @@ impl MidnightWalletSyncService {
 										update,
 									} => {
 										// Log Merkle tree collapsed updates for debugging MT index info
-										log::info!(
+										info!(
 											"Merkle tree collapsed update at blockchain index {} - protocol: {}, start: {}, end: {}, update_len: {}",
 											index, protocol_version, start, end, update.len()
 										);
 
 										// Store the collapsed update for LedgerContext synchronization
 										if !update.is_empty() {
-											log::info!("Storing collapsed update for LedgerContext sync: start={}, end={}", start, end);
+											info!("Storing collapsed update for LedgerContext sync: start={}, end={}", start, end);
 
 											let collapsed_update_info = CollapsedUpdateInfo {
 												blockchain_index: index,
@@ -241,7 +240,7 @@ impl MidnightWalletSyncService {
 
 											self.process_relevant_collapsed_update(collapsed_update_info).await?;
 
-											log::debug!(
+											debug!(
 												"Processed relevant collapsed update at index {}",
 												index
 											);
@@ -256,7 +255,7 @@ impl MidnightWalletSyncService {
 							highest_relevant_index,
 							highest_relevant_wallet_index,
 						} => {
-							log::debug!(
+							debug!(
 								"Progress update - highest: {}, relevant: {}, wallet: {}",
 								highest_index,
 								highest_relevant_index,
@@ -264,27 +263,27 @@ impl MidnightWalletSyncService {
 							);
 
 							if highest_index >= highest_relevant_wallet_index {
-								log::info!("Wallet sync completed");
+								info!("Wallet sync completed");
 								break;
 							}
 						}
 					}
 				}
 				Err(e) => {
-					log::error!("Error in wallet subscription: {}", e);
+					error!("Error in wallet subscription: {}", e);
 					// Continue processing other events
 				}
 			}
 				}
 				_ = &mut timeout => {
 					// No events received for IDLE_TIMEOUT duration
-					log::info!("No new events for {} seconds, assuming sync is complete", IDLE_TIMEOUT.as_secs());
+					info!("No new events for {} seconds, assuming sync is complete", IDLE_TIMEOUT.as_secs());
 					break;
 				}
 			}
 		}
 
-		log::info!("Sync completed! Processed {} events", events_processed);
+		info!("Sync completed! Processed {} events", events_processed);
 
 		Ok(())
 	}
@@ -301,12 +300,12 @@ impl MidnightWalletSyncService {
 			// Store the transaction for LedgerContext synchronization
 			self.processed_transactions.push(parsed_tx.clone());
 
-			log::info!(
+			info!(
 				"Successfully stored relevant transaction: {}",
 				transaction_data.hash,
 			);
 		} else {
-			log::warn!(
+			warn!(
 				"Transaction {} has no raw data to process",
 				transaction_data.hash
 			);
@@ -327,7 +326,7 @@ impl MidnightWalletSyncService {
 		// Store the update in memory
 		self.collapsed_updates.push(collapsed_update);
 
-		log::info!(
+		info!(
 			"Successfully stored relevant collapsed update: {}",
 			collapsed_update_info.blockchain_index,
 		);
@@ -339,35 +338,27 @@ impl MidnightWalletSyncService {
 	async fn parse_transaction(
 		raw_hex: &str,
 		network_id: NetworkId,
-	) -> Result<Transaction<midnight_node_ledger_helpers::Proof, DefaultDB>, WalletSyncError> {
-		// Remove 0x prefix if present
-		let clean_hex = raw_hex.strip_prefix("0x").unwrap_or(raw_hex);
+	) -> Result<Transaction<Proof, DefaultDB>, WalletSyncError> {
+		// The indexer provides the transaction as a hex-encoded string
+		// We need to deserialize it into the actual Transaction object
+		let tx_bytes = hex::decode(raw_hex).map_err(|e| {
+			error!("[PARSE_TRANSACTION] Failed to decode hex: {}", e);
+			WalletSyncError::ParseError(format!("Failed to decode hex: {}", e))
+		})?;
 
-		// Decode hex to bytes
-		let raw_bytes = hex::decode(clean_hex)
-			.map_err(|e| WalletSyncError::ParseError(format!("Invalid hex: {}", e)))?;
-
-		// Create a cursor for reading the bytes
-		let cursor = std::io::Cursor::new(&raw_bytes);
-
-		// Attempt to deserialize the transaction using midnight-serialize
-		match deserialize::<Transaction<midnight_node_ledger_helpers::Proof, DefaultDB>, _>(
-			cursor, network_id,
-		) {
-			Ok(transaction) => Ok(transaction),
-			Err(e) => {
-				log::error!("Failed to deserialize transaction: {}", e);
-				Err(WalletSyncError::ParseError(format!(
-					"Failed to deserialize midnight transaction: {}",
+		let transaction: Transaction<Proof, DefaultDB> = deserialize(&tx_bytes[..], network_id)
+			.map_err(|e| {
+				error!(
+					"[PARSE_TRANSACTION] Failed to deserialize transaction: {}",
 					e
-				)))
-			}
-		}
+				);
+				WalletSyncError::ParseError(format!("Failed to deserialize transaction: {}", e))
+			})?;
+
+		Ok(transaction)
 	}
 
-	/// Parse collapsed update from indexer data into a MerkleTreeCollapsedUpdate
-	/// This function converts the indexer's string representation into the actual
-	/// midnight-ledger-prototype MerkleTreeCollapsedUpdate object
+	/// Parse raw collapsed update hex into midnight-node MerkleTreeCollapsedUpdate type
 	async fn parse_collapsed_update(
 		update_info: &CollapsedUpdateInfo,
 		network_id: NetworkId,
@@ -375,12 +366,12 @@ impl MidnightWalletSyncService {
 		// The indexer provides the update as a hex-encoded string
 		// We need to deserialize it into the actual MerkleTreeCollapsedUpdate object
 		let update_bytes = hex::decode(&update_info.update_data).map_err(|e| {
-			log::error!("[PARSE_COLLAPSED_UPDATE] Failed to decode hex: {}", e);
+			error!("[PARSE_COLLAPSED_UPDATE] Failed to decode hex: {}", e);
 			WalletSyncError::MerkleTreeUpdateError(format!("Failed to decode hex: {}", e))
 		})?;
 
 		let collapsed_update: midnight_ledger_prototype::transient_crypto::merkle_tree::MerkleTreeCollapsedUpdate = deserialize(&update_bytes[..], network_id).map_err(|e| {
-			log::error!("[PARSE_COLLAPSED_UPDATE] Failed to deserialize collapsed update: {}", e);
+			error!("[PARSE_COLLAPSED_UPDATE] Failed to deserialize collapsed update: {}", e);
 			WalletSyncError::MerkleTreeUpdateError(format!(
 				"Failed to deserialize collapsed update: {}",
 				e
@@ -395,14 +386,14 @@ impl MidnightWalletSyncService {
 		let wallet = self.context.wallet_from_seed(self.seed);
 
 		let total_coins = wallet.state.coins.iter().count();
-		log::info!("Wallet has {} total coins", total_coins);
+		info!("Wallet has {} total coins", total_coins);
 
 		let mut balance = 0u128;
 
 		for (idx, (nullifier, qualified_coin_info)) in wallet.state.coins.iter().enumerate() {
 			let coin_info: midnight_node_ledger_helpers::CoinInfo = (&*qualified_coin_info).into();
 
-			log::info!(
+			info!(
 				"Coin {}: type={:?}, value={} tDUST, nullifier={:?}",
 				idx + 1,
 				coin_info.type_,
@@ -411,13 +402,13 @@ impl MidnightWalletSyncService {
 			);
 
 			if coin_info.type_ == NATIVE_TOKEN {
-				log::info!(
+				info!(
 					"Adding native token coin with value: {} tDUST",
 					format_token_amount(coin_info.value, MIDNIGHT_TOKEN_DECIMALS)
 				);
 				balance = balance.saturating_add(coin_info.value);
 			} else {
-				log::info!(
+				info!(
 					"Skipping non-native token coin (type: {:?})",
 					coin_info.type_
 				);
