@@ -116,6 +116,7 @@ impl MidnightWalletSyncService {
 	}
 
 	pub async fn apply_collapsed_updates(&self) -> Result<(), WalletSyncError> {
+		// First, apply collapsed updates to the ledger state
 		let mut context_ledger_state_guard = self.context.ledger_state.lock().unwrap();
 
 		for collapsed_update in &self.collapsed_updates {
@@ -134,7 +135,7 @@ impl MidnightWalletSyncService {
 					context_ledger_state_guard.zswap.first_free = collapsed_update.end + 1;
 
 					info!(
-						"Successfully applied collapsed update: start={}, end={}, new first_free={}, tree_height_after={}, root changed: {:?} -> {:?}",
+						"Successfully applied collapsed update to ledger state: start={}, end={}, new first_free={}, tree_height_after={}, root changed: {:?} -> {:?}",
 						collapsed_update.start,
 						collapsed_update.end,
 						context_ledger_state_guard.zswap.first_free,
@@ -144,7 +145,40 @@ impl MidnightWalletSyncService {
 					);
 				}
 				Err(e) => {
-					error!("Failed to apply collapsed update: {}", e);
+					error!("Failed to apply collapsed update to ledger state: {}", e);
+					return Err(WalletSyncError::MerkleTreeUpdateError(format!(
+						"Failed to apply collapsed update to ledger state: {}",
+						e
+					)));
+				}
+			}
+		}
+
+		// Drop the ledger state guard to avoid holding multiple locks
+		drop(context_ledger_state_guard);
+
+		// Now apply the same collapsed updates to all wallet states
+		let mut wallets_guard = self.context.wallets.lock().unwrap();
+		
+		for (_seed, wallet) in wallets_guard.iter_mut() {
+			for collapsed_update in &self.collapsed_updates {
+				match wallet.state.apply_collapsed_update(collapsed_update) {
+					Ok(new_state) => {
+						info!(
+							"Successfully applied collapsed update to wallet state: start={}, end={}, new first_free={}",
+							collapsed_update.start,
+							collapsed_update.end,
+							new_state.first_free
+						);
+						wallet.update_state(new_state);
+					}
+					Err(e) => {
+						error!("Failed to apply collapsed update to wallet state: {}", e);
+						return Err(WalletSyncError::MerkleTreeUpdateError(format!(
+							"Failed to apply collapsed update to wallet state: {}",
+							e
+						)));
+					}
 				}
 			}
 		}
