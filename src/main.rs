@@ -63,7 +63,7 @@ async fn main() {
 
 	info!("Created proof provider");
 
-	let seed = "54313fe4ab08e349394c6f6bdcaf332398b8f4c9564784dca2b6cd4dee189e66".to_string(); //wallet::generate_random_seed();
+	let seed = "ad07074adc90c5c9fa3494825ffac54c082c31f3c736458deb463958bcd6a6af".to_string(); //wallet::generate_random_seed();
 	let wallet_seed = WalletSeed::from(seed.as_str());
 	let wallet = Wallet::<DefaultDB>::new(wallet_seed, 0, WalletKind::NoLegacy);
 	let source_address = MidnightAddress::from_wallet(&wallet, network);
@@ -113,7 +113,6 @@ async fn main() {
 		})
 		.unwrap();
 
-	// TODO: maybe this is not necessary
 	wallet_sync_service
 		.apply_collapsed_updates()
 		.await
@@ -160,6 +159,7 @@ async fn main() {
 		Ok(()) => {
 			info!("Transaction submitted successfully via Subxt");
 			info!("{:#?}", transaction);
+			context.update_from_txs(&[transaction]);
 		}
 		Err(e) => {
 			error!("Failed to submit transaction via Subxt: {}", e);
