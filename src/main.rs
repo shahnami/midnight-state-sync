@@ -63,7 +63,7 @@ async fn main() {
 
 	info!("Created proof provider");
 
-	let seed = "6ac456637ef316762050781aea23633ad36dd30f846541587bececf53be05a79".to_string(); //wallet::generate_random_seed();
+	let seed = "54313fe4ab08e349394c6f6bdcaf332398b8f4c9564784dca2b6cd4dee189e66".to_string(); //wallet::generate_random_seed();
 	let wallet_seed = WalletSeed::from(seed.as_str());
 	let wallet = Wallet::<DefaultDB>::new(wallet_seed, 0, WalletKind::NoLegacy);
 	let source_address = MidnightAddress::from_wallet(&wallet, network);
@@ -78,7 +78,9 @@ async fn main() {
 	// export MIDNIGHT_LEDGER_TEST_STATIC_DIR=user/path/to/midnightntwrk/midnight-node/static/contracts
 	let context = Arc::new(LedgerContext::new_from_wallet_seeds(&[
 		wallet_seed,
-		// TODO: Figure out why we need to add destination wallet seed as well. It otherwise fails with wallet with seed does not exist in LedgerContext.
+		// TODO: Figure out why we need to add destination wallet seed as well. It otherwise fails with:
+		// thread 'main' panicked at /Users/nami/.cargo/git/checkouts/midnight-node-a5e2d7071ca76673/29935d2/ledger/helpers/src/context.rs:92:4:
+		// Wallet with seed WalletSeed([...]) does not exists in the `LedgerContext
 		destination_wallet_seed,
 	]));
 
@@ -111,6 +113,7 @@ async fn main() {
 		})
 		.unwrap();
 
+	// TODO: maybe this is not necessary
 	wallet_sync_service
 		.apply_collapsed_updates()
 		.await
@@ -180,10 +183,11 @@ pub async fn make_simple_transfer(
 	// 	midnight_node_ledger_helpers::Wallet::<MidnightDefaultDB>::calculate_fee(1, 1);
 	// let total_required = amount + estimated_fee;
 
-	// Use actual observed fee from well_formed validation (instead of inflated estimate)
-	// The Wallet::calculate_fee(1, 1) method returns 444M dust which is incorrect
-	// The actual fee for simple transfers is around 40K dust based on well_formed logs
-	let actual_fee = 50000u128; // Conservative estimate based on observed 40,391 dust
+	// Calculate fee based on transaction structure
+	// For now, assume 2 outputs (recipient + change) in most cases
+	// Note: The Wallet::calculate_fee method seems to overestimate fees significantly
+	// Based on the error, actual fee for 1 input, 2 outputs is ~60,855 dust
+	let actual_fee = 61000u128; // Conservative estimate for 1 input, 2 outputs (observed: 60,855)
 	let total_required = amount + actual_fee;
 
 	// Validate total amount including fees
@@ -281,6 +285,25 @@ pub async fn make_simple_transfer(
 	let mut offer = OfferInfo::default();
 	offer.inputs.push(Box::new(input_info));
 	offer.outputs.push(Box::new(recipient_output));
+
+	// Calculate change and create change output if needed
+	// This ensures the indexer recognizes the transaction as relevant to the sender
+	let change_amount = actual_utxo_value.saturating_sub(amount + actual_fee);
+	if change_amount > 0 {
+		let change_output = OutputInfo::<WalletSeed> {
+			destination: from_wallet_seed, // Send change back to sender
+			token_type,
+			value: change_amount,
+		};
+		offer.outputs.push(Box::new(change_output));
+		info!(
+			"Change output: {{destination: self, token_type: {:?}, value: {} tDUST}}",
+			token_type,
+			format_token_amount(change_amount, transaction::MIDNIGHT_TOKEN_DECIMALS)
+		);
+	} else {
+		info!("No change output needed (exact amount)");
+	}
 
 	// Generate cryptographically secure random seed with timestamp for uniqueness
 	let mut rng_seed = [0u8; 32];

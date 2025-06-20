@@ -58,9 +58,7 @@ impl MidnightWalletSyncService {
 		wallet: &Wallet<DefaultDB>,
 		network: NetworkId,
 	) -> Result<ViewingKeyFormat, WalletSyncError> {
-		// Create a temporary wallet to access the secret keys
 		let secret_keys = &wallet.secret_keys;
-
 		// Get the encryption secret key and serialize it
 		let enc_secret_key = &secret_keys.encryption_secret_key;
 		let mut enc_secret_bytes = Vec::new();
@@ -159,16 +157,14 @@ impl MidnightWalletSyncService {
 
 		// Now apply the same collapsed updates to all wallet states
 		let mut wallets_guard = self.context.wallets.lock().unwrap();
-		
+
 		for (_seed, wallet) in wallets_guard.iter_mut() {
 			for collapsed_update in &self.collapsed_updates {
 				match wallet.state.apply_collapsed_update(collapsed_update) {
 					Ok(new_state) => {
 						info!(
 							"Successfully applied collapsed update to wallet state: start={}, end={}, new first_free={}",
-							collapsed_update.start,
-							collapsed_update.end,
-							new_state.first_free
+							collapsed_update.start, collapsed_update.end, new_state.first_free
 						);
 						wallet.update_state(new_state);
 					}

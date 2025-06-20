@@ -2,6 +2,11 @@
 //!
 //! This module provides a builder pattern for constructing Midnight transactions
 //! following the midnight-node patterns.
+//!
+//! IMPORTANT: When creating transactions, always include a change output back to the sender
+//! if there's any remaining value after accounting for the recipient amount and fees.
+//! This ensures the indexer recognizes the transaction as relevant to the sender's wallet
+//! during synchronization.
 
 use midnight_node_ledger_helpers::{
 	DB, FromContext, IntentInfo, LedgerContext, OfferInfo, Proof, ProofProvider,
