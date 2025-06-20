@@ -63,7 +63,7 @@ async fn main() {
 
 	info!("Created proof provider");
 
-	let seed = "ad07074adc90c5c9fa3494825ffac54c082c31f3c736458deb463958bcd6a6af".to_string(); //wallet::generate_random_seed();
+	let seed = "bfe68bd945e0be305ac20cedaf1eec2baef1f8e8d88e199dc1f2afcd124fa7a5".to_string(); //wallet::generate_random_seed();
 	let wallet_seed = WalletSeed::from(seed.as_str());
 	let wallet = Wallet::<DefaultDB>::new(wallet_seed, 0, WalletKind::NoLegacy);
 	let source_address = MidnightAddress::from_wallet(&wallet, network);
