@@ -28,6 +28,12 @@ pub struct MidnightWalletSyncService {
 	/// Store collapsed updates for LedgerContext merkle tree synchronization
 	collapsed_updates: Vec<MerkleTreeCollapsedUpdate>,
 	network: NetworkId,
+	/// Track the highest blockchain index we've actually processed data for
+	highest_processed_index: u64,
+	/// Track if we've seen any data events (to distinguish from metadata-only sync)
+	has_processed_data: bool,
+	/// Track all blockchain indices we've processed to detect gaps
+	processed_indices: std::collections::HashSet<u64>,
 }
 
 impl MidnightWalletSyncService {
@@ -50,6 +56,9 @@ impl MidnightWalletSyncService {
 			processed_transactions: Vec::new(),
 			collapsed_updates: Vec::new(),
 			network,
+			highest_processed_index: 0,
+			has_processed_data: false,
+			processed_indices: std::collections::HashSet::new(),
 		})
 	}
 
@@ -114,67 +123,30 @@ impl MidnightWalletSyncService {
 	}
 
 	pub async fn apply_collapsed_updates(&self) -> Result<(), WalletSyncError> {
-		// First, apply collapsed updates to the ledger state
-		let mut context_ledger_state_guard = self.context.ledger_state.lock().unwrap();
-
-		for collapsed_update in &self.collapsed_updates {
-			let old_root = context_ledger_state_guard.zswap.coin_coms.root();
-
-			match context_ledger_state_guard
-				.zswap
-				.coin_coms
-				.apply_collapsed_update(collapsed_update)
-			{
-				Ok(new_tree) => {
-					let new_root = new_tree.root();
-					// Replace the tree with the new one
-					context_ledger_state_guard.zswap.coin_coms = new_tree;
-					// Update first_free to be after the last applied index
-					context_ledger_state_guard.zswap.first_free = collapsed_update.end + 1;
-
-					info!(
-						"Successfully applied collapsed update to ledger state: start={}, end={}, new first_free={}, tree_height_after={}, root changed: {:?} -> {:?}",
-						collapsed_update.start,
-						collapsed_update.end,
-						context_ledger_state_guard.zswap.first_free,
-						context_ledger_state_guard.zswap.coin_coms.height(),
-						old_root,
-						new_root
-					);
-				}
-				Err(e) => {
-					error!("Failed to apply collapsed update to ledger state: {}", e);
-					return Err(WalletSyncError::MerkleTreeUpdateError(format!(
-						"Failed to apply collapsed update to ledger state: {}",
-						e
-					)));
-				}
-			}
-		}
-
-		// Drop the ledger state guard to avoid holding multiple locks
-		drop(context_ledger_state_guard);
-
-		// Now apply the same collapsed updates to all wallet states
 		let mut wallets_guard = self.context.wallets.lock().unwrap();
 
-		for (_seed, wallet) in wallets_guard.iter_mut() {
-			for collapsed_update in &self.collapsed_updates {
-				match wallet.state.apply_collapsed_update(collapsed_update) {
-					Ok(new_state) => {
-						info!(
-							"Successfully applied collapsed update to wallet state: start={}, end={}, new first_free={}",
-							collapsed_update.start, collapsed_update.end, new_state.first_free
-						);
-						wallet.update_state(new_state);
-					}
-					Err(e) => {
-						error!("Failed to apply collapsed update to wallet state: {}", e);
-						return Err(WalletSyncError::MerkleTreeUpdateError(format!(
-							"Failed to apply collapsed update to wallet state: {}",
-							e
-						)));
-					}
+		let wallet = wallets_guard.get_mut(&self.seed).ok_or_else(|| {
+			WalletSyncError::MerkleTreeUpdateError(format!(
+				"Wallet with seed {:?} not found in context",
+				self.seed
+			))
+		})?;
+
+		for collapsed_update in &self.collapsed_updates {
+			match wallet.state.apply_collapsed_update(collapsed_update) {
+				Ok(new_state) => {
+					info!(
+						"Applied collapsed update: start={}, end={}, new first_free={}",
+						collapsed_update.start, collapsed_update.end, new_state.first_free
+					);
+					wallet.update_state(new_state);
+				}
+				Err(e) => {
+					error!("Failed to apply collapsed update: {}", e);
+					return Err(WalletSyncError::MerkleTreeUpdateError(format!(
+						"Failed to apply collapsed update to wallet state: {}",
+						e
+					)));
 				}
 			}
 		}
@@ -239,6 +211,9 @@ impl MidnightWalletSyncService {
 										self.process_relevant_transaction(transaction).await?;
 
 										events_processed += 1;
+										self.highest_processed_index = self.highest_processed_index.max(index);
+										self.has_processed_data = true;
+										self.processed_indices.insert(index);
 										debug!(
 											"Processed relevant transaction at index {}",
 											index
@@ -270,6 +245,9 @@ impl MidnightWalletSyncService {
 
 											self.process_relevant_collapsed_update(collapsed_update_info).await?;
 
+											self.highest_processed_index = self.highest_processed_index.max(index);
+											self.has_processed_data = true;
+											self.processed_indices.insert(index);
 											debug!(
 												"Processed relevant collapsed update at index {}",
 												index
@@ -286,15 +264,25 @@ impl MidnightWalletSyncService {
 							highest_relevant_wallet_index,
 						} => {
 							debug!(
-								"Progress update - highest: {}, relevant: {}, wallet: {}",
+								"Progress update - highest: {}, relevant: {}, wallet: {}, processed up to: {}",
 								highest_index,
 								highest_relevant_index,
-								highest_relevant_wallet_index
+								highest_relevant_wallet_index,
+								self.highest_processed_index
 							);
 
-							if highest_index >= highest_relevant_wallet_index {
-								info!("Wallet sync completed");
+							// Only consider sync complete if:
+							// 1. We've reached the highest relevant index
+							// 2. We've actually processed data up to that point
+							// 3. We've processed at least some data (not just metadata)
+							if highest_index >= highest_relevant_wallet_index
+								&& self.highest_processed_index >= highest_relevant_wallet_index
+								&& self.has_processed_data {
+								info!("Wallet sync completed - all data processed up to index {}",
+									highest_relevant_wallet_index);
 								break;
+							} else if highest_index >= highest_relevant_wallet_index && !self.has_processed_data {
+								warn!("Progress update indicates completion but no data was processed - continuing sync");
 							}
 						}
 					}
@@ -313,7 +301,32 @@ impl MidnightWalletSyncService {
 			}
 		}
 
-		info!("Sync completed! Processed {} events", events_processed);
+		info!(
+			"Sync completed! Processed {} events up to blockchain index {}",
+			events_processed, self.highest_processed_index
+		);
+
+		// Verify we actually processed data
+		if !self.has_processed_data {
+			return Err(WalletSyncError::SyncError(
+				"Sync completed without processing any data - possible incomplete sync".to_string(),
+			));
+		}
+
+		// Check for gaps in processed indices
+		if self.has_processed_data && self.processed_indices.len() > 1 {
+			let mut sorted_indices: Vec<u64> = self.processed_indices.iter().cloned().collect();
+			sorted_indices.sort();
+
+			for window in sorted_indices.windows(2) {
+				if window[1] - window[0] > 1 {
+					warn!(
+						"Gap detected in blockchain indices: missing indices between {} and {}",
+						window[0], window[1]
+					);
+				}
+			}
+		}
 
 		Ok(())
 	}
@@ -331,8 +344,9 @@ impl MidnightWalletSyncService {
 			self.processed_transactions.push(parsed_tx.clone());
 
 			info!(
-				"Successfully stored relevant transaction: {}",
+				"Successfully stored relevant transaction: {} (apply_stage: {})",
 				transaction_data.hash,
+				transaction_data.apply_stage.as_ref().unwrap()
 			);
 		} else {
 			warn!(
@@ -411,7 +425,6 @@ impl MidnightWalletSyncService {
 		Ok(collapsed_update)
 	}
 
-	/// Internal method to get current balance
 	pub async fn get_current_balance(&self) -> u128 {
 		let wallet = self.context.wallet_from_seed(self.seed);
 

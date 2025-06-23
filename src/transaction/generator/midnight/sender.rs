@@ -51,8 +51,33 @@ where
 		let mn_tx = mn_meta::tx()
 			.midnight()
 			.send_mn_transaction(hex::encode(serialize(tx, self.network_id).unwrap()).into_bytes());
+
 		let unsigned_extrinsic = self.api.tx().create_unsigned(&mn_tx)?;
 		let tx_hash_string = format!("0x{}", hex::encode(unsigned_extrinsic.hash().as_bytes()));
+
+		let validation_result = unsigned_extrinsic.validate().await?;
+
+		// Check if validation result indicates success
+		match validation_result {
+			subxt::tx::ValidationResult::Valid(_) => {
+				// Transaction is valid, proceed with submission
+				info!("Transaction validated successfully");
+			}
+			subxt::tx::ValidationResult::Invalid(e) => {
+				error!("Transaction validation failed: {:?}", e);
+				return Err(subxt::Error::Other(format!(
+					"Transaction validation failed: {:?}",
+					e
+				)));
+			}
+			subxt::tx::ValidationResult::Unknown(e) => {
+				error!("Transaction validation unknown: {:?}", e);
+				return Err(subxt::Error::Other(format!(
+					"Transaction validation unknown: {:?}",
+					e
+				)));
+			}
+		}
 
 		info!("SENDING");
 		let tx_progress = self

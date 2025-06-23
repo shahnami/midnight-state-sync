@@ -63,7 +63,7 @@ impl MidnightIndexerClient {
 			.ok_or_else(|| IndexerError::NoData)?
 			.to_string();
 
-		info!("Established wallet session: {}", session_id);
+		info!("Connected wallet with session ID: {}", session_id);
 		Ok(session_id)
 	}
 

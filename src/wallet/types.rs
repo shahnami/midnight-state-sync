@@ -33,4 +33,7 @@ pub enum WalletSyncError {
 
 	#[error("Merkle tree update error: {0}")]
 	MerkleTreeUpdateError(String),
+
+	#[error("Sync error: {0}")]
+	SyncError(String),
 }

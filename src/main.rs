@@ -46,7 +46,7 @@ async fn main() {
 		.await
 		.unwrap();
 
-	let sender = sender::Sender::<Proof>::new(network, client);
+	let sender = sender::Sender::<Proof>::new(network, client.clone());
 
 	let indexer_client = indexer::MidnightIndexerClient::new(
 		"https://indexer.testnet-02.midnight.network/api/v1/graphql".to_string(),
@@ -63,7 +63,7 @@ async fn main() {
 
 	info!("Created proof provider");
 
-	let seed = "bfe68bd945e0be305ac20cedaf1eec2baef1f8e8d88e199dc1f2afcd124fa7a5".to_string(); //wallet::generate_random_seed();
+	let seed = "151f521307dab9fd5339aabc81542d30e2c33b0e0a1de5e80f3b343ccd72b7d4".to_string(); //wallet::generate_random_seed();
 	let wallet_seed = WalletSeed::from(seed.as_str());
 	let wallet = Wallet::<DefaultDB>::new(wallet_seed, 0, WalletKind::NoLegacy);
 	let source_address = MidnightAddress::from_wallet(&wallet, network);
@@ -262,7 +262,7 @@ pub async fn make_simple_transfer(
 
 	info!(
 		"Input info: {{origin: {:?}, token_type: {:?}, value: {} tDUST (actual UTXO value)}}",
-		from_wallet_seed,
+		hex::encode(from_wallet_seed.0),
 		token_type,
 		format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
 	);
@@ -276,7 +276,7 @@ pub async fn make_simple_transfer(
 
 	info!(
 		"Recipient output: {{destination: {:?}, token_type: {:?}, value: {} tDUST}}",
-		to_wallet_seed,
+		hex::encode(to_wallet_seed.0),
 		token_type,
 		format_token_amount(amount, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);

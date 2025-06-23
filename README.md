@@ -5,6 +5,7 @@ This repository demonstrates a critical bug in the Midnight blockchain wallet im
 ## Bug Summary
 
 When the wallet sync completes prematurely (before receiving all merkle tree updates), any transaction submitted with the incomplete merkle root will:
+
 1. Fail on-chain with `InvalidError: Zswap`
 2. Corrupt the wallet's internal state
 3. Prevent ALL future transactions from succeeding, even after complete resyncs
@@ -61,6 +62,7 @@ The wallet sync service has a race condition where it considers synchronization 
 ### Evidence from Logs
 
 From `tx11.log` (incomplete sync):
+
 ```
 Processing event: ProgressUpdate {
     highest_index: 10555,
@@ -72,6 +74,7 @@ Sync completed! Processed 4 events
 ```
 
 Later in the same transaction:
+
 ```
 attempted spend with unknown Merkle tree input.merkle_tree_root=76833aa705dc4ba23abda8f755258c8898cea751a36367ae22164707204fa522
 Transaction failed in finalized block: Runtime(Module(ModuleError(<Midnight::Transaction>)))
@@ -79,6 +82,7 @@ InvalidError: Zswap
 ```
 
 From `tx12.log` (after tx11 failed):
+
 ```
 Sync completed! Processed 12 events  // More complete sync than tx11
 ...
@@ -104,6 +108,7 @@ InvalidError: Zswap
 ## Technical Analysis
 
 The sync completion logic in `wallet/sync.rs`:
+
 ```rust
 if highest_index >= highest_relevant_wallet_index {
     info!("Wallet sync completed");
@@ -116,6 +121,7 @@ This relies on metadata rather than confirming data receipt, creating a window w
 ## Workaround
 
 Currently, the only workaround is to:
+
 1. Detect transaction failures due to "unknown Merkle tree"
 2. Completely reset wallet state
 3. Perform a full resync from genesis
@@ -148,8 +154,22 @@ The demo uses:
 ## Logs
 
 Example logs demonstrating the issue are included:
+
 - `tx10.log` - Successful transaction (last working state)
 - `tx11.log` - Incomplete sync leading to failed transaction
 - `tx12.log` - Subsequent transaction failing despite "complete" sync
 
 These logs show how the wallet state becomes permanently corrupted after a single incomplete sync.
+
+The InvalidError::Zswap (Pallet index 5, Error index 3) occurs when:
+
+1. Transaction validation: In `midnightntwrk/midnight-ledger-prototype/zswap/src/ledger.rs`, the chain validates each input's merkle tree root
+2. Root check fails: if `!self.past_roots.contains_key(&input.merkle_tree_root)` - the transaction's merkle root isn't in the chain's known roots
+3. Error propagation:
+
+   - Returns `zswap::error::TransactionInvalid::UnknownMerkleRoot`
+   - Wrapped as `TransactionInvalid::Zswap` in `ledger/src/error.rs:81`
+   - Converted to `InvalidError::Zswap` in `midnight-node/ledger/src/versions/common/conversions.rs:18`
+   - Finally appears as Pallet error index 5, variant 3
+
+The root cause: The wallet creates transactions with a merkle tree root from incomplete sync state that the chain doesn't recognize as valid.

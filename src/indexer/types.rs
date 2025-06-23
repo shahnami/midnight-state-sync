@@ -8,8 +8,11 @@ pub struct TransactionData {
 	pub hash: String,
 	pub identifiers: Option<Vec<String>>,
 	pub raw: Option<String>,
+	#[serde(rename = "applyStage")]
 	pub apply_stage: Option<String>,
+	#[serde(rename = "merkleTreeRoot")]
 	pub merkle_tree_root: Option<String>,
+	#[serde(rename = "protocolVersion")]
 	pub protocol_version: Option<u32>,
 }
 
