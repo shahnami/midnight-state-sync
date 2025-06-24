@@ -1,7 +1,7 @@
 pub mod sync;
 pub mod types;
 
-pub use sync::MidnightWalletSyncService;
+pub use sync::*;
 pub use types::*;
 
 use rand::Rng;

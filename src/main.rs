@@ -42,12 +42,6 @@ async fn main() {
 	info!("Starting wallet sync service");
 	let network = NetworkId::TestNet;
 
-	let client = OnlineClient::<PolkadotConfig>::from_url("wss://rpc.testnet-02.midnight.network")
-		.await
-		.unwrap();
-
-	let sender = sender::Sender::<Proof>::new(network, client.clone());
-
 	let indexer_client = indexer::MidnightIndexerClient::new(
 		"https://indexer.testnet-02.midnight.network/api/v1/graphql".to_string(),
 		"wss://indexer.testnet-02.midnight.network/api/v1/graphql/ws".to_string(),
@@ -86,15 +80,22 @@ async fn main() {
 
 	info!("Created context");
 
-	let wallet_sync_service = wallet::MidnightWalletSyncService::new(
+	// Create data directory for persistence
+	let data_dir = std::path::PathBuf::from("data");
+	std::fs::create_dir_all(&data_dir).expect("Failed to create data directory");
+
+	// Use the new modular sync architecture
+	let wallet_sync_orchestrator = wallet::WalletSyncOrchestrator::new(
 		indexer_client,
 		context.clone(),
 		wallet_seed,
 		network,
-	)
-	.await;
+		data_dir,
+		false, 			// use_full_sync = true for genesis sync
+		false,  		// enable_persistence = true to save/load wallet state
+	);
 
-	let mut wallet_sync_service = match wallet_sync_service {
+	let mut wallet_sync_orchestrator = match wallet_sync_orchestrator {
 		Ok(service) => service,
 		Err(e) => {
 			error!("Failed to start wallet sync service: {:?}", e);
@@ -104,33 +105,24 @@ async fn main() {
 
 	info!("Created wallet sync service");
 
-	// Syncs the latest updates and stores in service
-	wallet_sync_service
-		.sync_to_latest()
+	// The new orchestrator handles everything in a single sync() call
+	// It will:
+	// 1. Restore any saved state or checkpoints
+	// 2. Sync from the appropriate starting point
+	// 3. Apply all transactions and Merkle updates
+	// 4. Save the final state
+	wallet_sync_orchestrator
+		.sync()
 		.await
 		.map_err(|e| {
 			error!("Failed to sync wallet: {:?}", e);
 		})
 		.unwrap();
 
-	wallet_sync_service
-		.apply_collapsed_updates()
-		.await
-		.map_err(|e| {
-			error!("Failed to apply collapsed updates: {:?}", e);
-		})
-		.unwrap();
-
-	wallet_sync_service
-		.apply_transactions()
-		.await
-		.map_err(|e| {
-			error!("Failed to apply transactions: {:?}", e);
-		})
-		.unwrap();
+	info!("Wallet sync completed successfully");
 
 	// Get current balance from wallet sync
-	let available_utxo_value = wallet_sync_service.get_current_balance().await;
+	let available_utxo_value = wallet_sync_orchestrator.get_current_balance().await;
 	info!(
 		"Retrieved wallet balance: {} tDUST",
 		format_token_amount(available_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
@@ -155,11 +147,17 @@ async fn main() {
 
 	info!("Sending transaction");
 
+	let client = OnlineClient::<PolkadotConfig>::from_url("wss://rpc.testnet-02.midnight.network")
+		.await
+		.unwrap();
+
+	let sender = sender::Sender::<Proof>::new(network, client.clone());
+
 	match sender.send_tx(&transaction).await {
 		Ok(()) => {
 			info!("Transaction submitted successfully via Subxt");
 			info!("{:#?}", transaction);
-			context.update_from_txs(&[transaction]);
+			// Do not apply transaction here - it should only be applied when confirmed on chain
 		}
 		Err(e) => {
 			error!("Failed to submit transaction via Subxt: {}", e);
@@ -226,6 +224,12 @@ pub async fn make_simple_transfer(
 	);
 	info!("   - Type: {:?}", selected_coin.type_);
 	info!("   - Nonce: {:?}", selected_coin.nonce);
+	
+	// Debug: Check the mt_index
+	if let Some((_, qualified_coin_sp)) = from_wallet.state.coins.iter().find(|(_, coin_sp)| coin_sp.nonce == selected_coin.nonce) {
+		info!("   - MT Index: {}", qualified_coin_sp.mt_index);
+		info!("   - Wallet state first_free: {}", from_wallet.state.first_free);
+	}
 
 	// Verify the selected UTXO has sufficient value
 	if actual_utxo_value < amount + actual_fee {
