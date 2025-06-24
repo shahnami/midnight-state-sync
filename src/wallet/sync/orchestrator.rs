@@ -209,8 +209,23 @@ impl WalletSyncOrchestrator {
 			.sync(start_height, &mut event_dispatcher, &mut progress_tracker)
 			.await?;
 
-		// Note: Both merkle updates and transactions have already been applied during event processing
-		// The buffers were maintained for potential recovery/replay purposes
+		// Apply all buffered updates in the correct order
+		info!("Applying buffered merkle updates and transactions");
+		
+		// First, apply all merkle updates
+		let merkle_updates = merkle_buffer.lock().unwrap().clone();
+		info!("Applying {} merkle updates", merkle_updates.len());
+		for update in &merkle_updates {
+			self.merkle_service
+				.apply_collapsed_update(&self.seed, update)?;
+		}
+		
+		// Then, apply all transactions
+		let transactions = transaction_buffer.lock().unwrap().clone();
+		info!("Applying {} transactions", transactions.len());
+		if !transactions.is_empty() {
+			self.context.update_from_txs(&transactions);
+		}
 
 		// Save final state if persistence is enabled
 		if self.enable_persistence {
@@ -284,17 +299,13 @@ impl SyncEventHandler for OrchestratorEventHandler {
 				blockchain_index,
 				transaction_data,
 			} => {
-				// Process transaction
+				// Process transaction and buffer it (don't apply yet)
 				if let Some(tx) = self
 					.transaction_processor
 					.process_transaction(transaction_data)
 					.await?
 				{
-					// Apply transaction immediately to maintain correct state
-					// This ensures subsequent transactions see the updated state
-					self.context.update_from_txs(&[tx.clone()]);
-					
-					// Also buffer for potential replay/recovery
+					// Buffer the transaction for later application
 					self.transaction_buffer.lock().unwrap().push(tx);
 				}
 
@@ -322,17 +333,13 @@ impl SyncEventHandler for OrchestratorEventHandler {
 				}
 			}
 			SyncEvent::MerkleUpdateReceived { update_info, .. } => {
-				// Process and immediately apply merkle updates to ensure correct mt_index
+				// Process and buffer merkle update (don't apply yet)
 				let update = self
 					.merkle_service
 					.process_collapsed_update(update_info)
 					.await?;
 				
-				// Apply the update immediately instead of buffering
-				self.merkle_service
-					.apply_collapsed_update(&self.seed, &update)?;
-				
-				// Also buffer it for potential state restoration needs
+				// Buffer the update for later application
 				self.merkle_buffer.lock().unwrap().push(update);
 			}
 			SyncEvent::SyncCompleted { final_height, .. } => {
