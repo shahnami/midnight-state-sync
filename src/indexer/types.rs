@@ -2,6 +2,30 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Transaction application stage from the indexer
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "PascalCase")]
+pub enum ApplyStage {
+    /// Transaction is still pending
+    Pending,
+    /// Transaction succeeded entirely
+    SucceedEntirely,
+    /// Transaction succeeded partially
+    SucceedPartially,
+    /// Transaction failed entirely
+    FailEntirely,
+}
+
+impl ApplyStage {
+    /// Check if the transaction should be applied to the wallet state
+    pub fn should_apply(&self) -> bool {
+        matches!(
+            self,
+            ApplyStage::SucceedEntirely | ApplyStage::SucceedPartially
+        )
+    }
+}
+
 /// Transaction data from the indexer
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionData {
@@ -9,7 +33,7 @@ pub struct TransactionData {
     pub identifiers: Option<Vec<String>>,
     pub raw: Option<String>,
     #[serde(rename = "applyStage")]
-    pub apply_stage: Option<String>,
+    pub apply_stage: Option<ApplyStage>,
     #[serde(rename = "merkleTreeRoot")]
     pub merkle_tree_root: Option<String>,
     #[serde(rename = "protocolVersion")]
