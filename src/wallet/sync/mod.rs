@@ -16,13 +16,21 @@
 //!
 //! All submodules are designed to be modular and testable, with clear interfaces and responsibilities.
 
+/// Event system for decoupled communication during sync
 pub mod events;
+/// Service for processing Merkle tree updates
 pub mod merkle_update_service;
+/// Main coordinator for the wallet sync process
 pub mod orchestrator;
+/// Tracks synchronization progress and statistics
 pub mod progress_tracker;
+/// Persistence interfaces and implementations
 pub mod repositories;
+/// High-level state persistence and checkpoint management
 pub mod state_persistence;
+/// Pluggable synchronization strategies
 pub mod strategies;
+/// Transaction parsing and validation service
 pub mod transaction_processor;
 
 pub use orchestrator::*;
