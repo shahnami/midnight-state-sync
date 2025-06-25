@@ -7,12 +7,10 @@
 //! - `events`: Defines the event types and event handling traits used for decoupled communication between sync components.
 //! - `merkle_update_service`: Handles parsing and applying Merkle tree updates to wallet state.
 //! - `progress_tracker`: Tracks sync progress, processed indices, and provides statistics and validation.
-//! - `repositories`: Defines persistence interfaces and file-based implementations for wallet, ledger, and checkpoint data.
-//! - `state_persistence`: High-level service for saving/restoring wallet and ledger state, and managing checkpoints.
-//! - `strategies`: Contains pluggable sync strategies (full chain, relevant transactions) and their configuration.
+//! - `strategies`: Contains pluggable sync strategies (relevant transactions) and their configuration.
 //! - `transaction_processor`: Responsible for parsing and validating raw transaction data.
 //!
-//! The orchestrator coordinates the sync process by selecting a strategy, dispatching events, and invoking services for transaction and Merkle update processing. State persistence and progress tracking are integrated to ensure robust, resumable, and observable synchronization.
+//! The orchestrator coordinates the sync process by selecting a strategy, dispatching events, and invoking services for transaction and Merkle update processing. Progress tracking is integrated to ensure robust and observable synchronization.
 //!
 //! All submodules are designed to be modular and testable, with clear interfaces and responsibilities.
 
@@ -24,10 +22,6 @@ pub mod merkle_update_service;
 pub mod orchestrator;
 /// Tracks synchronization progress and statistics
 pub mod progress_tracker;
-/// Persistence interfaces and implementations
-pub mod repositories;
-/// High-level state persistence and checkpoint management
-pub mod state_persistence;
 /// Pluggable synchronization strategies
 pub mod strategies;
 /// Transaction parsing and validation service

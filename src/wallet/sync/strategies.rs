@@ -11,7 +11,7 @@
 //! Strategies interact with the event system to emit events for transactions, Merkle updates, and progress.
 //! The orchestrator selects and runs the appropriate strategy based on user configuration.
 
-use crate::indexer::{ApplyStage, MidnightIndexerClient, TransactionData, ViewingKeyFormat};
+use crate::indexer::{MidnightIndexerClient, ViewingKeyFormat};
 use crate::wallet::WalletSyncError;
 use crate::wallet::sync::events::{EventDispatcher, SyncEvent, convert_indexer_event};
 use crate::wallet::sync::progress_tracker::SyncProgressTracker;
@@ -160,9 +160,7 @@ impl SyncStrategy for RelevantTransactionSync {
 												start_height, highest_relevant_wallet_index);
 
 											// Dispatch completion event
-											event_dispatcher.dispatch(&SyncEvent::SyncCompleted {
-									final_height: start_height,
-								}).await?;
+											event_dispatcher.dispatch(&SyncEvent::SyncCompleted).await?;
 
 											return Ok(());
 										}
@@ -171,10 +169,7 @@ impl SyncStrategy for RelevantTransactionSync {
 											debug!("Sync completed based on progress update");
 
 											// Dispatch completion event
-											let stats = progress_tracker.get_stats();
-											event_dispatcher.dispatch(&SyncEvent::SyncCompleted {
-									final_height: stats.highest_processed_index,
-								}).await?;
+											event_dispatcher.dispatch(&SyncEvent::SyncCompleted).await?;
 
 											return Ok(());
 										}
@@ -226,147 +221,7 @@ impl SyncStrategy for RelevantTransactionSync {
 		let stats = progress_tracker.get_stats();
 		info!("Sync completed: {}", stats.summary());
 
-		event_dispatcher
-			.dispatch(&SyncEvent::SyncCompleted {
-				final_height: stats.highest_processed_index,
-			})
-			.await?;
-
-		Ok(())
-	}
-}
-
-/// Strategy for syncing the entire blockchain.
-///
-/// Fetches all blocks and transactions, emitting events for every transaction and Merkle update.
-pub struct FullChainSync {
-	indexer_client: MidnightIndexerClient,
-}
-
-impl FullChainSync {
-	/// Create a new full chain sync strategy.
-	pub fn new(indexer_client: MidnightIndexerClient) -> Self {
-		Self { indexer_client }
-	}
-}
-
-#[async_trait::async_trait]
-impl SyncStrategy for FullChainSync {
-	/// Execute the full chain sync strategy.
-	async fn sync(
-		&mut self,
-		start_height: u64,
-		event_dispatcher: &mut EventDispatcher,
-		progress_tracker: &mut SyncProgressTracker,
-	) -> Result<(), WalletSyncError> {
-		debug!("Starting full chain sync from block {}", start_height);
-
-		// Subscribe to ALL blocks
-		let mut blocks_stream = self.indexer_client.subscribe_blocks(start_height).await?;
-		let mut last_event_time = tokio::time::Instant::now();
-
-		// Use shorter timeout for block subscription
-		const BLOCK_IDLE_TIMEOUT: tokio::time::Duration = tokio::time::Duration::from_secs(4);
-
-		loop {
-			let timeout = tokio::time::sleep_until(last_event_time + BLOCK_IDLE_TIMEOUT);
-			tokio::pin!(timeout);
-
-			tokio::select! {
-				Some(block_result) = blocks_stream.next() => {
-					last_event_time = tokio::time::Instant::now();
-
-					match block_result {
-						Ok(block_data) => {
-							if let Some(block_obj) = block_data.as_object() {
-								let height = block_obj.get("height")
-									.and_then(|h| h.as_u64())
-									.unwrap_or(0);
-
-								let block_hash = block_obj.get("hash")
-									.and_then(|h| h.as_str())
-									.unwrap_or("unknown");
-
-								debug!("Processing block {} at height {}", block_hash, height);
-
-								// Process all transactions in the block
-								if let Some(transactions) = block_obj.get("transactions")
-									.and_then(|t| t.as_array()) {
-
-									for tx_data in transactions {
-										if let Some(tx_obj) = tx_data.as_object() {
-											let tx_hash = tx_obj.get("hash")
-												.and_then(|h| h.as_str())
-												.unwrap_or("unknown");
-
-											if let Some(raw_hex) = tx_obj.get("raw")
-												.and_then(|r| r.as_str()) {
-
-												// Create transaction data
-												let transaction_data = TransactionData {
-													hash: tx_hash.to_string(),
-													identifiers: None,
-													raw: Some(raw_hex.to_string()),
-													apply_stage: tx_obj.get("applyStage")
-														.and_then(|s| s.as_str())
-														.and_then(|s| match s {
-															"Pending" => Some(ApplyStage::Pending),
-															"SucceedEntirely" => Some(ApplyStage::SucceedEntirely),
-															"SucceedPartially" => Some(ApplyStage::SucceedPartially),
-															"FailEntirely" => Some(ApplyStage::FailEntirely),
-															_ => None,
-														}),
-													merkle_tree_root: tx_obj.get("merkleTreeRoot")
-														.and_then(|r| r.as_str())
-														.map(|s| s.to_string()),
-													protocol_version: tx_obj.get("protocolVersion")
-														.and_then(|v| v.as_u64())
-														.map(|v| v as u32),
-												};
-
-												// Dispatch transaction event
-												event_dispatcher.dispatch(&SyncEvent::TransactionReceived {
-													blockchain_index: height,
-													transaction_data,
-												}).await?;
-
-												progress_tracker.record_transaction(height);
-											}
-										}
-									}
-								}
-
-								// Log progress periodically
-								progress_tracker.log_progress(false);
-							}
-						}
-						Err(e) => {
-							error!("Error in blocks subscription: {}", e);
-							event_dispatcher.dispatch(&SyncEvent::SyncError).await?;
-						}
-					}
-				}
-				_ = &mut timeout => {
-					debug!("No new blocks for {} seconds, stopping sync", BLOCK_IDLE_TIMEOUT.as_secs());
-					break;
-				}
-			}
-		}
-
-		// Validate completion
-		if let Err(e) = progress_tracker.validate_completion() {
-			return Err(WalletSyncError::SyncError(e));
-		}
-
-		// Dispatch completion event
-		let stats = progress_tracker.get_stats();
-		info!("Sync completed: {}", stats.summary());
-
-		event_dispatcher
-			.dispatch(&SyncEvent::SyncCompleted {
-				final_height: stats.highest_processed_index,
-			})
-			.await?;
+		event_dispatcher.dispatch(&SyncEvent::SyncCompleted).await?;
 
 		Ok(())
 	}
