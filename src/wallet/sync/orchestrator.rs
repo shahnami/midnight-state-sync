@@ -165,23 +165,12 @@ impl WalletSyncOrchestrator {
 		Ok(ViewingKeyFormat::Bech32m(viewing_key_bech32))
 	}
 
-	/// Register event handlers.
-	///
-	/// This method can be used to add custom event handlers to the dispatcher.
-	pub fn register_handlers(&mut self) {
-		// Note: Handlers will need to be restructured to avoid circular dependencies
-		// For now, we'll handle events directly in the orchestrator
-	}
-
 	/// Start synchronization.
 	///
 	/// This method runs the sync strategy, dispatches events, buffers updates, and applies them in order.
 	/// It also manages state persistence and progress tracking.
 	pub async fn sync(&mut self) -> Result<(), WalletSyncError> {
 		info!("Starting wallet synchronization");
-
-		// Register handlers
-		self.register_handlers();
 
 		// Try to restore state first if persistence is enabled
 		let start_height = if self.enable_persistence {
