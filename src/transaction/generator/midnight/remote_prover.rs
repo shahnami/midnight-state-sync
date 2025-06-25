@@ -1,18 +1,27 @@
+//!
+//! Remote proof server integration for Midnight zero-knowledge proofs.
+//!
+//! Provides a client for submitting transactions to a remote proof server and retrieving
+//! zero-knowledge proofs required for transaction construction on the Midnight network.
+
 use async_trait::async_trait;
 use backoff::{ExponentialBackoff, future::retry};
 
 use midnight_node_ledger_helpers::*;
 
+/// Remote proof server client for generating zero-knowledge proofs
 pub struct RemoteProofServer {
 	url: String,
 	network_id: NetworkId,
 }
 
 impl RemoteProofServer {
+	/// Creates a new remote proof server client
 	pub fn new(url: String, network_id: NetworkId) -> Self {
 		Self { url, network_id }
 	}
 
+	/// Serializes a transaction and its circuit keys for the proof server
 	pub async fn serialize_request_body<D: DB>(
 		&self,
 		tx: &Transaction<ProofPreimage, D>,

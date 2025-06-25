@@ -1,3 +1,16 @@
+//!
+//! Midnight Wallet Sync
+//!
+//! This binary provides a command-line interface for synchronizing a Midnight wallet with the blockchain,
+//! querying balances, and submitting transactions. It demonstrates how to use the modular wallet sync
+//! orchestrator, indexer client, and transaction builder to interact with the Midnight network.
+//!
+//! Features:
+//! - Modular wallet synchronization with checkpointing and persistence
+//! - Transaction construction and submission
+//! - Integration with remote proof servers
+//! - Example of querying wallet balance and sending tDUST
+
 mod indexer;
 mod transaction;
 mod utils;
@@ -10,7 +23,7 @@ use midnight_node_ledger_helpers::{
 use rand::Rng;
 use std::sync::Arc;
 use subxt::{OnlineClient, PolkadotConfig};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 use crate::{
 	transaction::{
@@ -20,15 +33,23 @@ use crate::{
 	utils::format_token_amount,
 };
 
+/// Main entry point for the Midnight wallet sync and transaction CLI.
+///
+/// This function initializes logging, sets up the indexer client, proof provider, and wallet context,
+/// and runs the wallet sync orchestrator. It then queries the wallet balance and demonstrates how to
+/// construct and submit a simple transfer transaction to the Midnight network.
+///
+/// # Panics
+/// Panics if any required service fails to initialize or if transaction submission fails.
 #[tokio::main(flavor = "current_thread")]
 async fn main() {
-	// Initialize tracing subscriber with debug logging for midnight crates
+	// Initialize tracing subscriber with info logging for midnight crates
 	tracing_subscriber::fmt()
 		.with_env_filter(
 			tracing_subscriber::EnvFilter::from_default_env()
-				.add_directive("midnight_node_ledger_helpers=debug".parse().unwrap())
-				.add_directive("midnight_ledger_prototype=debug".parse().unwrap())
-				.add_directive("midnight_zswap=debug".parse().unwrap())
+				.add_directive("midnight_node_ledger_helpers=info".parse().unwrap())
+				.add_directive("midnight_ledger_prototype=info".parse().unwrap())
+				.add_directive("midnight_zswap=info".parse().unwrap())
 				.add_directive(tracing::Level::INFO.into()),
 		)
 		.with_target(false)
@@ -41,12 +62,6 @@ async fn main() {
 
 	info!("Starting wallet sync service");
 	let network = NetworkId::TestNet;
-
-	let client = OnlineClient::<PolkadotConfig>::from_url("wss://rpc.testnet-02.midnight.network")
-		.await
-		.unwrap();
-
-	let sender = sender::Sender::<Proof>::new(network, client.clone());
 
 	let indexer_client = indexer::MidnightIndexerClient::new(
 		"https://indexer.testnet-02.midnight.network/api/v1/graphql".to_string(),
@@ -68,8 +83,8 @@ async fn main() {
 	let wallet = Wallet::<DefaultDB>::new(wallet_seed, 0, WalletKind::NoLegacy);
 	let source_address = MidnightAddress::from_wallet(&wallet, network);
 
-	info!("Wallet seed: {:?}", seed);
-	info!("Wallet address: {:?}", source_address.encode());
+	debug!("Wallet seed: {:?}", seed);
+	debug!("Wallet address: {:?}", source_address.encode());
 
 	let destination_seed = wallet::generate_random_seed();
 	let destination_wallet_seed = WalletSeed::from(destination_seed.as_str());
@@ -86,15 +101,22 @@ async fn main() {
 
 	info!("Created context");
 
-	let wallet_sync_service = wallet::MidnightWalletSyncService::new(
+	// Create data directory for persistence
+	let data_dir = std::path::PathBuf::from("data");
+	std::fs::create_dir_all(&data_dir).expect("Failed to create data directory");
+
+	// Use the new modular sync architecture
+	let wallet_sync_orchestrator = wallet::WalletSyncOrchestrator::new(
 		indexer_client,
 		context.clone(),
 		wallet_seed,
 		network,
-	)
-	.await;
+		data_dir,
+		false, // use_full_sync = true for genesis sync
+		false, // enable_persistence = true to save/load wallet state
+	);
 
-	let mut wallet_sync_service = match wallet_sync_service {
+	let mut wallet_sync_orchestrator = match wallet_sync_orchestrator {
 		Ok(service) => service,
 		Err(e) => {
 			error!("Failed to start wallet sync service: {:?}", e);
@@ -104,33 +126,24 @@ async fn main() {
 
 	info!("Created wallet sync service");
 
-	// Syncs the latest updates and stores in service
-	wallet_sync_service
-		.sync_to_latest()
+	// The new orchestrator handles everything in a single sync() call
+	// It will:
+	// 1. Restore any saved state or checkpoints
+	// 2. Sync from the appropriate starting point
+	// 3. Apply all transactions and Merkle updates
+	// 4. Save the final state
+	wallet_sync_orchestrator
+		.sync()
 		.await
 		.map_err(|e| {
 			error!("Failed to sync wallet: {:?}", e);
 		})
 		.unwrap();
 
-	wallet_sync_service
-		.apply_collapsed_updates()
-		.await
-		.map_err(|e| {
-			error!("Failed to apply collapsed updates: {:?}", e);
-		})
-		.unwrap();
-
-	wallet_sync_service
-		.apply_transactions()
-		.await
-		.map_err(|e| {
-			error!("Failed to apply transactions: {:?}", e);
-		})
-		.unwrap();
+	info!("Wallet sync completed successfully");
 
 	// Get current balance from wallet sync
-	let available_utxo_value = wallet_sync_service.get_current_balance().await;
+	let available_utxo_value = wallet_sync_orchestrator.get_current_balance().await;
 	info!(
 		"Retrieved wallet balance: {} tDUST",
 		format_token_amount(available_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
@@ -155,11 +168,17 @@ async fn main() {
 
 	info!("Sending transaction");
 
+	let client = OnlineClient::<PolkadotConfig>::from_url("wss://rpc.testnet-02.midnight.network")
+		.await
+		.unwrap();
+
+	let sender = sender::Sender::<Proof>::new(network, client.clone());
+
 	match sender.send_tx(&transaction).await {
 		Ok(()) => {
 			info!("Transaction submitted successfully via Subxt");
 			info!("{:#?}", transaction);
-			context.update_from_txs(&[transaction]);
+			// Do not apply transaction here - it should only be applied when confirmed on chain
 		}
 		Err(e) => {
 			error!("Failed to submit transaction via Subxt: {}", e);
@@ -167,6 +186,23 @@ async fn main() {
 	}
 }
 
+/// Creates a simple token transfer transaction from one wallet to another.
+///
+/// This function selects a UTXO, calculates fees, constructs the transaction offer, and builds a signed
+/// transaction using the provided proof provider. It ensures that change is returned to the sender if
+/// necessary and that the transaction is well-formed for the Midnight network.
+///
+/// # Arguments
+/// * `available_utxo_value` - Total available balance in the source wallet
+/// * `context` - Ledger context containing wallet information
+/// * `from_wallet_seed` - Seed of the source wallet
+/// * `to_wallet_seed` - Seed of the destination wallet
+/// * `amount` - Amount to transfer (in smallest token units)
+/// * `token_type` - Type of token to transfer
+/// * `proof_provider` - Service for generating zero-knowledge proofs
+///
+/// # Returns
+/// A signed transaction ready for submission to the network, or an error if construction fails.
 #[allow(clippy::too_many_arguments)]
 pub async fn make_simple_transfer(
 	available_utxo_value: u128,
@@ -219,13 +255,27 @@ pub async fn make_simple_transfer(
 	let selected_coin = temp_input_info.min_match_coin(&from_wallet.state);
 	let actual_utxo_value = selected_coin.value;
 
-	info!("Selected UTXO details:");
-	info!(
+	debug!("Selected UTXO details:");
+	debug!(
 		"   - Value: {} tDUST",
 		format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS)
 	);
-	info!("   - Type: {:?}", selected_coin.type_);
-	info!("   - Nonce: {:?}", selected_coin.nonce);
+	debug!("   - Type: {:?}", selected_coin.type_);
+	debug!("   - Nonce: {:?}", selected_coin.nonce);
+
+	// Debug: Check the mt_index
+	if let Some((_, qualified_coin_sp)) = from_wallet
+		.state
+		.coins
+		.iter()
+		.find(|(_, coin_sp)| coin_sp.nonce == selected_coin.nonce)
+	{
+		debug!("   - MT Index: {}", qualified_coin_sp.mt_index);
+		debug!(
+			"   - Wallet state first_free: {}",
+			from_wallet.state.first_free
+		);
+	}
 
 	// Verify the selected UTXO has sufficient value
 	if actual_utxo_value < amount + actual_fee {
@@ -245,7 +295,7 @@ pub async fn make_simple_transfer(
 		)));
 	}
 
-	info!(
+	debug!(
 		"Found UTXO with value: {} tDUST (requested minimum: {} tDUST including {} tDUST fee)",
 		format_token_amount(actual_utxo_value, transaction::MIDNIGHT_TOKEN_DECIMALS),
 		format_token_amount(amount + actual_fee, transaction::MIDNIGHT_TOKEN_DECIMALS),
@@ -260,7 +310,7 @@ pub async fn make_simple_transfer(
 		value: actual_utxo_value, // Use the exact value of the selected UTXO
 	};
 
-	info!(
+	debug!(
 		"Input info: {{origin: {:?}, token_type: {:?}, value: {} tDUST (actual UTXO value)}}",
 		hex::encode(from_wallet_seed.0),
 		token_type,
@@ -274,7 +324,7 @@ pub async fn make_simple_transfer(
 		value: amount,
 	};
 
-	info!(
+	debug!(
 		"Recipient output: {{destination: {:?}, token_type: {:?}, value: {} tDUST}}",
 		hex::encode(to_wallet_seed.0),
 		token_type,
@@ -296,13 +346,13 @@ pub async fn make_simple_transfer(
 			value: change_amount,
 		};
 		offer.outputs.push(Box::new(change_output));
-		info!(
+		debug!(
 			"Change output: {{destination: self, token_type: {:?}, value: {} tDUST}}",
 			token_type,
 			format_token_amount(change_amount, transaction::MIDNIGHT_TOKEN_DECIMALS)
 		);
 	} else {
-		info!("No change output needed (exact amount)");
+		debug!("No change output needed (exact amount)");
 	}
 
 	// Generate cryptographically secure random seed with timestamp for uniqueness

@@ -1,175 +1,396 @@
-# Midnight State Sync Demo
+# Midnight State Sync Service
 
-This repository demonstrates a critical bug in the Midnight blockchain wallet implementation where incomplete synchronization permanently corrupts the wallet state, preventing all future transactions from succeeding.
+A proof-of-concept (PoC) implementation of a robust wallet synchronization service for the Midnight blockchain. This service demonstrates advanced state management, chronological transaction ordering, and proper handling of failed transactions to maintain wallet integrity.
 
-## Bug Summary
+## Overview
 
-When the wallet sync completes prematurely (before receiving all merkle tree updates), any transaction submitted with the incomplete merkle root will:
+The Midnight State Sync Service provides a reliable way to synchronize wallet state with the blockchain, featuring:
 
-1. Fail on-chain with `InvalidError: Zswap`
-2. Corrupt the wallet's internal state
-3. Prevent ALL future transactions from succeeding, even after complete resyncs
+- **Chronological Update Ordering**: Ensures merkle tree updates and transactions are applied in the correct blockchain order
+- **Transaction Status Filtering**: Only applies successful transactions to wallet state
+- **Event-Driven Architecture**: Modular design with clear separation of concerns
+- **Multiple Sync Strategies**: Supports both full chain sync and viewing key-based relevant transaction sync
+- **State Persistence**: Optional checkpointing and state saving for resumable synchronization
+- **Comprehensive Error Handling**: Proper handling of failed transactions and network issues
 
-This effectively "bricks" the wallet until manual state reset.
+## Architecture
 
-## Prerequisites
+```mermaid
+graph TB
+    subgraph "External Services"
+        RPC[Midnight RPC Node]
+        Indexer[GraphQL Indexer]
+        ProofServer[Proof Server]
+    end
 
-- Rust and Cargo installed
-- Access to Midnight testnet
-- Local proof server running on port 6300
+    subgraph "Sync Orchestrator"
+        Orchestrator[WalletSyncOrchestrator]
+        EventDispatcher[Event Dispatcher]
+        EventHandler[Event Handler]
+    end
 
-## Setup
+    subgraph "Sync Strategies"
+        RelevantSync[RelevantTransactionSync]
+        FullSync[FullChainSync]
+    end
 
-1. Clone the repository:
+    subgraph "Processing Services"
+        TxProcessor[TransactionProcessor]
+        MerkleService[MerkleTreeUpdateService]
+        Persistence[StatePersistenceService]
+    end
 
-```bash
-git clone https://github.com/shahnami/midnight-state-sync.git
-cd midnight-state-sync
+    subgraph "Storage"
+        UpdateBuffer[(Chronological Updates Buffer)]
+        WalletState[(Wallet State)]
+        LedgerState[(Ledger State)]
+        Checkpoints[(Checkpoints)]
+    end
+
+    %% Connections
+    Indexer --> RelevantSync
+    Indexer --> FullSync
+
+    RelevantSync --> EventDispatcher
+    FullSync --> EventDispatcher
+
+    EventDispatcher --> EventHandler
+    EventHandler --> TxProcessor
+    EventHandler --> MerkleService
+    EventHandler --> UpdateBuffer
+
+    Orchestrator --> UpdateBuffer
+    Orchestrator --> WalletState
+    Orchestrator --> LedgerState
+
+    Persistence --> WalletState
+    Persistence --> LedgerState
+    Persistence --> Checkpoints
+
+    ProofServer --> Orchestrator
+    RPC --> Orchestrator
 ```
 
-2. Set the required environment variable for Midnight static contracts:
+## Application Flow Diagram
 
-```bash
-export MIDNIGHT_LEDGER_TEST_STATIC_DIR=/PATH/TO/midnightntwrk/midnight-node/static/contracts
+This sequence diagram shows the detailed flow from entrypoint through the orchestrator's behavior:
+
+```mermaid
+sequenceDiagram
+    participant Main
+    participant Orchestrator
+    participant Strategy
+    participant EventDispatcher
+    participant EventHandler
+    participant Services
+    participant Buffer
+    participant State
+
+    Main->>Main: Initialize Config
+    Main->>Main: Create LedgerContext
+    Main->>Main: Create IndexerClient
+    
+    Main->>Orchestrator: new(config)
+    activate Orchestrator
+    
+    Note over Orchestrator: Initialization Phase
+    Orchestrator->>Orchestrator: Derive Viewing Key
+    Orchestrator->>Services: Create TransactionProcessor
+    Orchestrator->>Services: Create MerkleService
+    Orchestrator->>Services: Create PersistenceService
+    
+    alt use_full_sync = true
+        Orchestrator->>Strategy: Create FullChainSync
+    else use_full_sync = false
+        Orchestrator->>Strategy: Create RelevantTransactionSync
+    end
+    
+    Orchestrator-->>Main: Return Orchestrator
+    deactivate Orchestrator
+    
+    Main->>Orchestrator: sync()
+    activate Orchestrator
+    
+    Note over Orchestrator: Sync Phase
+    
+    alt persistence_enabled
+        Orchestrator->>State: Restore Previous State
+        Orchestrator->>State: Load Checkpoints
+    end
+    
+    Orchestrator->>Buffer: Create Update Buffer
+    Orchestrator->>EventHandler: Create with Services
+    Orchestrator->>EventDispatcher: Register Handler
+    
+    Orchestrator->>Strategy: sync(start_height)
+    activate Strategy
+    
+    loop Sync Events
+        Strategy->>Strategy: Fetch from Indexer
+        Strategy->>EventDispatcher: dispatch(event)
+        EventDispatcher->>EventHandler: handle(event)
+        
+        alt TransactionReceived
+            EventHandler->>Services: process_transaction()
+            EventHandler->>Buffer: Push Transaction Update
+        else MerkleUpdateReceived
+            EventHandler->>Services: process_merkle_update()
+            EventHandler->>Buffer: Push Merkle Update
+        end
+    end
+    
+    Strategy->>EventDispatcher: dispatch(SyncCompleted)
+    Strategy-->>Orchestrator: Done
+    deactivate Strategy
+    
+    Note over Orchestrator: Update Application Phase
+    
+    Orchestrator->>Buffer: Get All Updates
+    Orchestrator->>Orchestrator: Sort by Blockchain Index
+    
+    loop Apply Updates
+        alt Update is MerkleUpdate
+            Orchestrator->>Services: apply_collapsed_update()
+            Services->>State: Update Merkle Tree
+        else Update is Transaction
+            Orchestrator->>Orchestrator: Check ApplyStage
+            alt SucceededEntirely or SucceededPartially
+                Orchestrator->>State: update_from_txs()
+            else Failed or Pending
+                Orchestrator->>Orchestrator: Skip Transaction
+            end
+        end
+    end
+    
+    alt persistence_enabled
+        Orchestrator->>Services: save_states()
+        Services->>State: Persist to Disk
+    end
+    
+    Orchestrator-->>Main: Success
+    deactivate Orchestrator
+    
+    Main->>Orchestrator: get_current_balance()
+    Orchestrator->>State: Read Wallet Coins
+    Orchestrator-->>Main: Return Balance
 ```
 
-3. Start the local proof server (required for transaction proving):
+## Component Flow
 
-```bash
-# In a separate terminal, start your Midnight proof server on port 6300
-docker run -p 6300:6300 midnightnetwork/proof-server -- 'midnight-proof-server --network testnet'
-```
-
-## Running the Demo
-
-Run the demo with:
-
-```bash
-cargo run
-```
-
-## Bug Details
-
-### The Problem
-
-The wallet sync service has a race condition where it considers synchronization complete based on `ProgressUpdate` events rather than confirming all data has been received. This leads to:
-
-1. **Incomplete Sync**: The sync completes with only partial merkle tree state
-2. **Failed Transaction**: Transactions fail with "unknown Merkle tree" errors
-3. **State Corruption**: The wallet optimistically updates its state for the failed transaction
-4. **Permanent Failure**: All subsequent transactions fail, even after "complete" syncs
-
-### Evidence from Logs
-
-From `tx11.log` (incomplete sync):
+### 1. Sync Initialization
 
 ```
-Processing event: ProgressUpdate {
-    highest_index: 10555,
-    highest_relevant_index: 10555,
-    highest_relevant_wallet_index: 10555,
-}
-Wallet sync completed
-Sync completed! Processed 4 events
+Main → WalletSyncOrchestrator → Select Strategy → Initialize Services
 ```
 
-Later in the same transaction:
+### 2. Event Processing Flow
 
 ```
-attempted spend with unknown Merkle tree input.merkle_tree_root=76833aa705dc4ba23abda8f755258c8898cea751a36367ae22164707204fa522
-Transaction failed in finalized block: Runtime(Module(ModuleError(<Midnight::Transaction>)))
-InvalidError: Zswap
+Indexer → Strategy → Event Conversion → Event Dispatcher → Event Handler → Buffer Updates
 ```
 
-From `tx12.log` (after tx11 failed):
+### 3. Update Application
 
 ```
-Sync completed! Processed 12 events  // More complete sync than tx11
-...
-attempted spend with unknown Merkle tree input.merkle_tree_root=213db2382c118edf56f65adef25eaf269279e986de40e1aafc76173c5a534339
-Transaction failed in finalized block: Runtime(Module(ModuleError(<Midnight::Transaction>)))
-InvalidError: Zswap
+Buffer → Sort by Index → Apply Merkle Updates → Filter & Apply Transactions → Update State
 ```
 
-### Root Causes
+## Key Components
 
-1. **Race Condition in Sync**: The indexer reports completion via `ProgressUpdate` before ensuring all events are delivered
-2. **No Transaction Rollback**: Failed transactions aren't rolled back in the wallet state
-3. **No State Validation**: The wallet doesn't verify merkle tree consistency before transactions
-4. **No Recovery Mechanism**: Once corrupted, the wallet state cannot self-repair
+### Sync Orchestrator (`orchestrator.rs`)
 
-### Impact
+The main coordinator that:
 
-- One incomplete sync permanently breaks the wallet
-- Users must manually reset wallet state to recover
-- No indication to users that the wallet is in a corrupted state
-- Subsequent syncs appear to complete but don't fix the corruption
+- Initializes all services
+- Manages the sync lifecycle
+- Buffers updates chronologically
+- Applies updates in correct order
+- Handles state persistence
 
-## Technical Analysis
+### Sync Strategies
 
-The sync completion logic in `wallet/sync.rs`:
+#### RelevantTransactionSync
 
-```rust
-if highest_index >= highest_relevant_wallet_index {
-    info!("Wallet sync completed");
-    break;
-}
-```
+- Uses wallet viewing key for efficient sync
+- Only fetches transactions relevant to the wallet
+- Ideal for normal wallet operations
 
-This relies on metadata rather than confirming data receipt, creating a window where sync can complete without all merkle tree updates.
+#### FullChainSync
 
-## Workaround
+- Syncs entire blockchain
+- Processes all blocks and transactions
+- Useful for analysis or indexing
 
-Currently, the only workaround is to:
+### Event System
 
-1. Detect transaction failures due to "unknown Merkle tree"
-2. Completely reset wallet state
-3. Perform a full resync from genesis
-4. Retry the transaction
+#### Event Types
 
-## Key Files
+- `TransactionReceived`: New transaction to process
+- `MerkleUpdateReceived`: Merkle tree update
+- `ProgressUpdate`: Sync progress information
+- `SyncCompleted`: Sync finished successfully
+- `SyncError`: Error during synchronization
 
-- `src/main.rs` - Main entry point that orchestrates the wallet sync and transaction
-- `src/wallet/sync.rs` - Wallet synchronization service (contains the race condition)
-- `src/transaction/` - Transaction building and sending logic
-- `src/indexer/` - GraphQL client for the Midnight indexer
+### Processing Services
+
+#### TransactionProcessor
+
+- Parses raw transaction data
+- Validates transaction format
+- Filters based on `ApplyStage`
+
+#### MerkleTreeUpdateService
+
+- Processes merkle tree updates
+- Applies updates to wallet state
+- Maintains merkle tree consistency
+
+#### StatePersistenceService
+
+- Saves wallet and ledger state
+- Manages transaction checkpoints
+- Enables resumable sync
 
 ## Configuration
 
-The demo uses:
+### Environment Variables
 
-- **Network**: Midnight Testnet-02
-- **RPC**: `wss://rpc.testnet-02.midnight.network`
-- **Indexer**: `https://indexer.testnet-02.midnight.network/api/v1/graphql`
-- **Proof Server**: `http://localhost:6300`
+```bash
+# Required: Path to Midnight static contracts
+export MIDNIGHT_LEDGER_TEST_STATIC_DIR=/path/to/midnight-node/static/contracts
+```
 
-## Reproduction Steps
+### Sync Options
 
-1. Fund a fresh wallet from the faucet
-2. Run multiple transactions in succession
-3. Eventually, a sync will complete prematurely
-4. That transaction and all subsequent transactions will fail
-5. Even after restarting and resyncing, transactions continue to fail
+```rust
+// In main.rs or when creating orchestrator
+let orchestrator = WalletSyncOrchestrator::new(
+    indexer_client,
+    context,
+    seed,
+    network,
+    data_dir,
+    use_full_sync,      // false for viewing key sync, true for full chain
+    enable_persistence, // true to save state and checkpoints
+)?;
+```
 
-## Logs
+## Running the Service
 
-Example logs demonstrating the issue are included:
+### Prerequisites
 
-- `tx10.log` - Successful transaction (last working state)
-- `tx11.log` - Incomplete sync leading to failed transaction
-- `tx12.log` - Subsequent transaction failing despite "complete" sync
+1. **Rust and Cargo**
 
-These logs show how the wallet state becomes permanently corrupted after a single incomplete sync.
+   ```bash
+   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+   ```
 
-The InvalidError::Zswap (Pallet index 5, Error index 3) occurs when:
+2. **Midnight Proof Server**
 
-1. Transaction validation: In `midnightntwrk/midnight-ledger-prototype/zswap/src/ledger.rs`, the chain validates each input's merkle tree root
-2. Root check fails: if `!self.past_roots.contains_key(&input.merkle_tree_root)` - the transaction's merkle root isn't in the chain's known roots
-3. Error propagation:
+   ```bash
+   docker run -d -p 6300:6300 midnightnetwork/proof-server \
+     -- 'midnight-proof-server --network testnet'
+   ```
 
-   - Returns `zswap::error::TransactionInvalid::UnknownMerkleRoot`
-   - Wrapped as `TransactionInvalid::Zswap` in `ledger/src/error.rs:81`
-   - Converted to `InvalidError::Zswap` in `midnight-node/ledger/src/versions/common/conversions.rs:18`
-   - Finally appears as Pallet error index 5, variant 3
+3. **Clone Repository**
+   ```bash
+   git clone https://github.com/shahnami/midnight-state-sync.git
+   cd midnight-state-sync
+   ```
 
-The root cause: The wallet creates transactions with a merkle tree root from incomplete sync state that the chain doesn't recognize as valid.
+### Basic Usage
+
+```bash
+# Run with default configuration (testnet)
+cargo run
+```
+
+## Transaction Status Handling
+
+The service properly handles different transaction states:
+
+### ApplyStage Enum
+
+```rust
+pub enum ApplyStage {
+    Pending,            // Transaction not yet finalized
+    SucceedEntirely,    // Transaction fully successful
+    SucceedPartially,   // Transaction partially successful
+    FailEntirely,       // Transaction completely failed
+}
+```
+
+Only transactions with `SucceededEntirely` or `SucceededPartially` status are applied to the wallet state, preventing corruption from failed transactions.
+
+## State Persistence
+
+When persistence is enabled, the service saves:
+
+### Wallet State
+
+- Location: `{data_dir}/wallet_state_{seed}.bin`
+- Contains: Coins, nullifiers, merkle tree state
+- Metadata: Sync height, timestamp
+
+### Ledger State
+
+- Location: `{data_dir}/ledger_state.bin`
+- Contains: Global ledger state
+- Metadata: Sync height, timestamp
+
+### Checkpoints
+
+- Location: `{data_dir}/checkpoint_transactions_height_{N}.json`
+- Contains: Raw transaction data
+- Frequency: Every 1000 blocks (configurable)
+- Retention: Keep last 2 checkpoints
+
+## Error Handling
+
+The service includes comprehensive error handling for:
+
+- Network connectivity issues
+- Invalid transaction formats
+- Merkle tree inconsistencies
+- Failed transaction application
+- Corrupted state recovery
+
+## Development
+
+### Project Structure
+
+```
+src/
+├── main.rs                 # Entry point
+├── wallet/
+│   ├── sync/
+│   │   ├── orchestrator.rs # Main sync coordinator
+│   │   ├── strategies.rs   # Sync strategies
+│   │   ├── events.rs       # Event system
+│   │   ├── transaction_processor.rs
+│   │   ├── merkle_update_service.rs
+│   │   ├── state_persistence.rs
+│   │   └── repositories.rs # Persistence layer
+│   └── types.rs
+├── indexer/
+│   ├── client.rs          # GraphQL client
+│   └── types.rs           # Indexer types
+└── transaction/           # Transaction building
+
+```
+
+### Debugging
+
+Enable detailed logging:
+
+```bash
+RUST_LOG=midnight_state_sync=debug cargo run
+```
+
+Log levels:
+
+- `error`: Critical errors only
+- `warn`: Warnings and errors
+- `info`: General information (default)
+- `debug`: Detailed debugging info
+- `trace`: Very verbose tracing

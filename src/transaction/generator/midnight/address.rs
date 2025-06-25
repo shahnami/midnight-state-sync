@@ -1,8 +1,15 @@
+//!
+//! Address encoding, decoding, and construction utilities for the Midnight blockchain.
+//!
+//! Provides types and functions for working with bech32m-encoded Midnight addresses, including
+//! support for network and type information, and conversion from wallet keys.
+
 use bech32::Bech32m;
 use thiserror::Error;
 
 use midnight_node_ledger_helpers::*;
 
+/// Errors that can occur when working with Midnight addresses
 #[derive(Error, Debug)]
 pub enum MidnightAddressError {
 	#[error("prefix first part != 'mn'")]
@@ -11,6 +18,7 @@ pub enum MidnightAddressError {
 	PrefixMissingType,
 }
 
+/// Represents a Midnight blockchain address with network and type information
 #[derive(Debug, Clone)]
 pub struct MidnightAddress {
 	pub type_: String,
@@ -19,6 +27,7 @@ pub struct MidnightAddress {
 }
 
 impl MidnightAddress {
+	/// Decodes a bech32m-encoded Midnight address string
 	pub fn decode(encoded_data: &str) -> Result<Self, MidnightAddressError> {
 		let (hrp, data) = bech32::decode(encoded_data).expect("Failed while bech32 decoding");
 		let prefix_parts = hrp.as_str().split('_').collect::<Vec<&str>>();
@@ -39,6 +48,7 @@ impl MidnightAddress {
 		})
 	}
 
+	/// Encodes the address to a bech32m string representation
 	pub fn encode(&self) -> String {
 		let network_str = match &self.network {
 			Some(network) => format!("_{}", network),
@@ -53,6 +63,7 @@ impl MidnightAddress {
 		.expect("Failed while bech32 encoding")
 	}
 
+	/// Creates a Midnight address from a wallet and network ID
 	pub fn from_wallet<D: DB>(wallet: &Wallet<D>, network: NetworkId) -> Self {
 		let network_str = match network {
 			NetworkId::MainNet => None,
@@ -75,6 +86,10 @@ impl MidnightAddress {
 	}
 }
 
+/// Implements conversion from a MidnightAddress to a NetworkId.
+///
+/// This allows extracting the network identifier (e.g., MainNet, DevNet, TestNet, Undeployed)
+/// from the network field of a Midnight address. Returns an error string if the network is unknown.
 impl TryFrom<&MidnightAddress> for NetworkId {
 	type Error = String;
 
