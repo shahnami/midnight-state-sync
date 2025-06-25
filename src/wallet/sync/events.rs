@@ -33,7 +33,7 @@ pub enum SyncEvent {
 		highest_relevant_wallet_index: u64,
 	},
 	/// Sync has completed
-	SyncCompleted { final_height: u64 },
+	SyncCompleted,
 	/// An error occurred during sync
 	SyncError,
 }

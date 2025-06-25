@@ -302,6 +302,7 @@ impl MidnightIndexerClient {
 	///
 	/// # Errors
 	/// Returns `IndexerError` if the WebSocket connection or subscription fails.
+	#[allow(dead_code)]
 	pub async fn subscribe_blocks(
 		&self,
 		start_height: u64,

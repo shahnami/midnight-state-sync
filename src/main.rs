@@ -6,7 +6,7 @@
 //! orchestrator, indexer client, and transaction builder to interact with the Midnight network.
 //!
 //! Features:
-//! - Modular wallet synchronization with checkpointing and persistence
+//! - Modular wallet synchronization
 //! - Transaction construction and submission
 //! - Integration with remote proof servers
 //! - Example of querying wallet balance and sending tDUST
@@ -101,19 +101,12 @@ async fn main() {
 
 	info!("Created context");
 
-	// Create data directory for persistence
-	let data_dir = std::path::PathBuf::from("data");
-	std::fs::create_dir_all(&data_dir).expect("Failed to create data directory");
-
 	// Use the new modular sync architecture
 	let wallet_sync_orchestrator = wallet::WalletSyncOrchestrator::new(
 		indexer_client,
 		context.clone(),
 		wallet_seed,
 		network,
-		data_dir,
-		false, // use_full_sync = true for genesis sync
-		false, // enable_persistence = true to save/load wallet state
 	);
 
 	let mut wallet_sync_orchestrator = match wallet_sync_orchestrator {

@@ -9,8 +9,7 @@ The Midnight State Sync Service provides a reliable way to synchronize wallet st
 - **Chronological Update Ordering**: Ensures merkle tree updates and transactions are applied in the correct blockchain order
 - **Transaction Status Filtering**: Only applies successful transactions to wallet state
 - **Event-Driven Architecture**: Modular design with clear separation of concerns
-- **Multiple Sync Strategies**: Supports both full chain sync and viewing key-based relevant transaction sync
-- **State Persistence**: Optional checkpointing and state saving for resumable synchronization
+- **Viewing Key-Based Sync**: Efficient synchronization using wallet viewing keys
 - **Comprehensive Error Handling**: Proper handling of failed transactions and network issues
 
 ## Architecture
@@ -29,30 +28,25 @@ graph TB
         EventHandler[Event Handler]
     end
 
-    subgraph "Sync Strategies"
+    subgraph "Sync Strategy"
         RelevantSync[RelevantTransactionSync]
-        FullSync[FullChainSync]
     end
 
     subgraph "Processing Services"
         TxProcessor[TransactionProcessor]
         MerkleService[MerkleTreeUpdateService]
-        Persistence[StatePersistenceService]
     end
 
     subgraph "Storage"
         UpdateBuffer[(Chronological Updates Buffer)]
         WalletState[(Wallet State)]
         LedgerState[(Ledger State)]
-        Checkpoints[(Checkpoints)]
     end
 
     %% Connections
     Indexer --> RelevantSync
-    Indexer --> FullSync
 
     RelevantSync --> EventDispatcher
-    FullSync --> EventDispatcher
 
     EventDispatcher --> EventHandler
     EventHandler --> TxProcessor
@@ -62,10 +56,6 @@ graph TB
     Orchestrator --> UpdateBuffer
     Orchestrator --> WalletState
     Orchestrator --> LedgerState
-
-    Persistence --> WalletState
-    Persistence --> LedgerState
-    Persistence --> Checkpoints
 
     ProofServer --> Orchestrator
     RPC --> Orchestrator
@@ -97,13 +87,7 @@ sequenceDiagram
     Orchestrator->>Orchestrator: Derive Viewing Key
     Orchestrator->>Services: Create TransactionProcessor
     Orchestrator->>Services: Create MerkleService
-    Orchestrator->>Services: Create PersistenceService
-    
-    alt use_full_sync = true
-        Orchestrator->>Strategy: Create FullChainSync
-    else use_full_sync = false
-        Orchestrator->>Strategy: Create RelevantTransactionSync
-    end
+    Orchestrator->>Strategy: Create RelevantTransactionSync
     
     Orchestrator-->>Main: Return Orchestrator
     deactivate Orchestrator
@@ -113,10 +97,6 @@ sequenceDiagram
     
     Note over Orchestrator: Sync Phase
     
-    alt persistence_enabled
-        Orchestrator->>State: Restore Previous State
-        Orchestrator->>State: Load Checkpoints
-    end
     
     Orchestrator->>Buffer: Create Update Buffer
     Orchestrator->>EventHandler: Create with Services
@@ -162,10 +142,6 @@ sequenceDiagram
         end
     end
     
-    alt persistence_enabled
-        Orchestrator->>Services: save_states()
-        Services->>State: Persist to Disk
-    end
     
     Orchestrator-->>Main: Success
     deactivate Orchestrator
@@ -205,21 +181,14 @@ The main coordinator that:
 - Manages the sync lifecycle
 - Buffers updates chronologically
 - Applies updates in correct order
-- Handles state persistence
 
-### Sync Strategies
+### Sync Strategy
 
 #### RelevantTransactionSync
 
 - Uses wallet viewing key for efficient sync
 - Only fetches transactions relevant to the wallet
 - Ideal for normal wallet operations
-
-#### FullChainSync
-
-- Syncs entire blockchain
-- Processes all blocks and transactions
-- Useful for analysis or indexing
 
 ### Event System
 
@@ -245,11 +214,6 @@ The main coordinator that:
 - Applies updates to wallet state
 - Maintains merkle tree consistency
 
-#### StatePersistenceService
-
-- Saves wallet and ledger state
-- Manages transaction checkpoints
-- Enables resumable sync
 
 ## Configuration
 
@@ -260,7 +224,7 @@ The main coordinator that:
 export MIDNIGHT_LEDGER_TEST_STATIC_DIR=/path/to/midnight-node/static/contracts
 ```
 
-### Sync Options
+### Creating the Orchestrator
 
 ```rust
 // In main.rs or when creating orchestrator
@@ -269,9 +233,6 @@ let orchestrator = WalletSyncOrchestrator::new(
     context,
     seed,
     network,
-    data_dir,
-    use_full_sync,      // false for viewing key sync, true for full chain
-    enable_persistence, // true to save state and checkpoints
 )?;
 ```
 
@@ -322,29 +283,6 @@ pub enum ApplyStage {
 
 Only transactions with `SucceededEntirely` or `SucceededPartially` status are applied to the wallet state, preventing corruption from failed transactions.
 
-## State Persistence
-
-When persistence is enabled, the service saves:
-
-### Wallet State
-
-- Location: `{data_dir}/wallet_state_{seed}.bin`
-- Contains: Coins, nullifiers, merkle tree state
-- Metadata: Sync height, timestamp
-
-### Ledger State
-
-- Location: `{data_dir}/ledger_state.bin`
-- Contains: Global ledger state
-- Metadata: Sync height, timestamp
-
-### Checkpoints
-
-- Location: `{data_dir}/checkpoint_transactions_height_{N}.json`
-- Contains: Raw transaction data
-- Frequency: Every 1000 blocks (configurable)
-- Retention: Keep last 2 checkpoints
-
 ## Error Handling
 
 The service includes comprehensive error handling for:
@@ -368,9 +306,7 @@ src/
 │   │   ├── strategies.rs   # Sync strategies
 │   │   ├── events.rs       # Event system
 │   │   ├── transaction_processor.rs
-│   │   ├── merkle_update_service.rs
-│   │   ├── state_persistence.rs
-│   │   └── repositories.rs # Persistence layer
+│   │   └── merkle_update_service.rs
 │   └── types.rs
 ├── indexer/
 │   ├── client.rs          # GraphQL client

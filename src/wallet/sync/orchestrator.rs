@@ -22,8 +22,7 @@ use crate::wallet::sync::{
 	events::{EventDispatcher, SyncEvent, SyncEventHandler},
 	merkle_update_service::MerkleTreeUpdateService,
 	progress_tracker::SyncProgressTracker,
-	state_persistence::{CheckpointConfig, StatePersistenceService},
-	strategies::{FullChainSync, RelevantTransactionSync, SyncConfig, SyncStrategy},
+	strategies::{RelevantTransactionSync, SyncConfig, SyncStrategy},
 	transaction_processor::TransactionProcessor,
 };
 
@@ -33,7 +32,6 @@ use midnight_node_ledger_helpers::{
 	DefaultDB, LedgerContext, NATIVE_TOKEN, NetworkId, Proof, Serializable, Transaction, Wallet,
 	WalletSeed,
 };
-use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use tracing::{debug, info};
 
@@ -70,14 +68,9 @@ pub struct WalletSyncOrchestrator {
 	// Services
 	transaction_processor: TransactionProcessor,
 	merkle_service: MerkleTreeUpdateService,
-	persistence_service: Arc<StatePersistenceService>,
 
 	// Sync strategy
 	sync_strategy: Box<dyn SyncStrategy>,
-
-	// Configuration
-	checkpoint_config: CheckpointConfig,
-	enable_persistence: bool,
 }
 
 impl WalletSyncOrchestrator {
@@ -89,9 +82,6 @@ impl WalletSyncOrchestrator {
 		context: Arc<LedgerContext<DefaultDB>>,
 		seed: WalletSeed,
 		network: NetworkId,
-		data_dir: PathBuf,
-		use_full_sync: bool,
-		enable_persistence: bool,
 	) -> Result<Self, WalletSyncError> {
 		let wallet = context.wallet_from_seed(seed);
 		let viewing_key = Self::derive_viewing_key(&wallet, network)?;
@@ -99,28 +89,20 @@ impl WalletSyncOrchestrator {
 		// Create services
 		let transaction_processor = TransactionProcessor::new(network);
 		let merkle_service = MerkleTreeUpdateService::new(context.clone(), network);
-		let persistence_service = Arc::new(StatePersistenceService::new(data_dir));
 
 		// Create sync strategy
-		let sync_strategy: Box<dyn SyncStrategy> = if use_full_sync {
-			Box::new(FullChainSync::new(indexer_client))
-		} else {
-			Box::new(RelevantTransactionSync::new(
-				indexer_client,
-				viewing_key.clone(),
-				SyncConfig::default(),
-			))
-		};
+		let sync_strategy: Box<dyn SyncStrategy> = Box::new(RelevantTransactionSync::new(
+			indexer_client,
+			viewing_key.clone(),
+			SyncConfig::default(),
+		));
 
 		Ok(Self {
 			context,
 			seed,
 			transaction_processor,
 			merkle_service,
-			persistence_service,
 			sync_strategy,
-			checkpoint_config: CheckpointConfig::default(),
-			enable_persistence,
 		})
 	}
 
@@ -172,58 +154,21 @@ impl WalletSyncOrchestrator {
 	pub async fn sync(&mut self) -> Result<(), WalletSyncError> {
 		info!("Starting wallet synchronization");
 
-		// Try to restore state first if persistence is enabled
-		let start_height = if self.enable_persistence {
-			match self
-				.persistence_service
-				.restore_states(&self.context, &self.seed)
-				.await?
-			{
-				Some(height) => {
-					info!("Restored state from height {}, continuing sync", height);
-					height + 1
-				}
-				_ => {
-					// Try to load from checkpoint
-					if let Some((transactions, height)) =
-						self.persistence_service.load_latest_checkpoint().await?
-					{
-						info!(
-							"Loaded {} transactions from checkpoint at height {}",
-							transactions.len(),
-							height
-						);
-
-						// Transactions will be parsed later during sync
-
-						height + 1
-					} else {
-						info!("No checkpoint found, starting from genesis");
-						0
-					}
-				}
-			}
-		} else {
-			info!("Persistence disabled, starting from genesis");
-			0
-		};
+		// Start from genesis
+		let start_height = 0;
+		info!("Starting sync from genesis");
 
 		// Create progress tracker
 		let mut progress_tracker = SyncProgressTracker::new(start_height);
 
 		// Create shared buffer for chronological updates
 		let updates_buffer = Arc::new(Mutex::new(Vec::<ChronologicalUpdate>::new()));
-		let checkpoint_transactions = Arc::new(Mutex::new(Vec::new()));
 
 		// Execute sync strategy with a custom event handler
 		let event_handler = OrchestratorEventHandler {
 			transaction_processor: self.transaction_processor.clone(),
 			merkle_service: self.merkle_service.clone(),
-			persistence_service: self.persistence_service.clone(),
-			checkpoint_config: self.checkpoint_config.clone(),
-			enable_persistence: self.enable_persistence,
 			updates_buffer: updates_buffer.clone(),
-			checkpoint_transactions: checkpoint_transactions.clone(),
 		};
 
 		let mut event_dispatcher = EventDispatcher::new();
@@ -287,14 +232,6 @@ impl WalletSyncOrchestrator {
 			}
 		}
 
-		// Save final state if persistence is enabled
-		if self.enable_persistence {
-			let final_height = progress_tracker.get_stats().highest_processed_index;
-			self.persistence_service
-				.save_states(&self.context, &self.seed, final_height)
-				.await?;
-		}
-
 		info!("Wallet synchronization completed successfully");
 		Ok(())
 	}
@@ -342,19 +279,14 @@ impl WalletSyncOrchestrator {
 ///
 /// This handler receives all sync events and is responsible for:
 /// - Processing and buffering transactions and Merkle updates
-/// - Managing checkpointing and persistence
 /// - Ensuring updates are applied in the correct order after sync completes
 ///
-/// It interacts with the transaction processor, Merkle update service, and persistence service.
+/// It interacts with the transaction processor and Merkle update service.
 struct OrchestratorEventHandler {
 	transaction_processor: TransactionProcessor,
 	merkle_service: MerkleTreeUpdateService,
-	persistence_service: Arc<StatePersistenceService>,
-	checkpoint_config: CheckpointConfig,
-	enable_persistence: bool,
 	// Buffer for accumulating updates in chronological order
 	updates_buffer: Arc<Mutex<Vec<ChronologicalUpdate>>>,
-	checkpoint_transactions: Arc<Mutex<Vec<String>>>,
 }
 
 #[async_trait::async_trait]
@@ -382,29 +314,6 @@ impl SyncEventHandler for OrchestratorEventHandler {
 							apply_stage: transaction_data.apply_stage.clone(),
 						});
 				}
-
-				// Save raw transaction for checkpointing if persistence is enabled
-				if self.enable_persistence {
-					if let Some(raw) = &transaction_data.raw {
-						self.checkpoint_transactions
-							.lock()
-							.unwrap()
-							.push(raw.clone());
-
-						// Save checkpoint at intervals
-						if *blockchain_index % self.checkpoint_config.interval == 0
-							&& *blockchain_index > 0
-						{
-							let transactions = self.checkpoint_transactions.lock().unwrap().clone();
-							self.persistence_service
-								.save_checkpoint(&transactions, *blockchain_index)
-								.await?;
-							self.persistence_service
-								.cleanup_checkpoints(self.checkpoint_config.keep_count)
-								.await?;
-						}
-					}
-				}
 			}
 			SyncEvent::MerkleUpdateReceived {
 				update_info,
@@ -425,16 +334,8 @@ impl SyncEventHandler for OrchestratorEventHandler {
 						update,
 					});
 			}
-			SyncEvent::SyncCompleted { final_height, .. } => {
-				// Save final checkpoint if persistence is enabled
-				if self.enable_persistence {
-					let transactions = self.checkpoint_transactions.lock().unwrap().clone();
-					if !transactions.is_empty() {
-						self.persistence_service
-							.save_checkpoint(&transactions, *final_height)
-							.await?;
-					}
-				}
+			SyncEvent::SyncCompleted => {
+				// Sync completed, no additional processing needed
 			}
 			_ => {}
 		}
