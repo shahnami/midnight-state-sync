@@ -8,24 +8,24 @@ use crate::indexer::IndexerError;
 #[allow(clippy::enum_variant_names)]
 #[derive(Debug, thiserror::Error)]
 pub enum WalletSyncError {
-	#[error("Indexer error: {0}")]
-	IndexerError(#[from] IndexerError),
+    #[error("Indexer error: {0}")]
+    IndexerError(#[from] IndexerError),
 
-	#[error("Session error: {0}")]
-	SessionError(String),
+    #[error("Session error: {0}")]
+    SessionError(String),
 
-	#[error("Viewing key error: {0}")]
-	ViewingKeyError(String),
+    #[error("Viewing key error: {0}")]
+    ViewingKeyError(String),
 
-	#[error("Transaction parse error: {0}")]
-	ParseError(String),
+    #[error("Transaction parse error: {0}")]
+    ParseError(String),
 
-	#[error("IO error: {0}")]
-	IoError(#[from] std::io::Error),
+    #[error("IO error: {0}")]
+    IoError(#[from] std::io::Error),
 
-	#[error("Merkle tree update error: {0}")]
-	MerkleTreeUpdateError(String),
+    #[error("Merkle tree update error: {0}")]
+    MerkleTreeUpdateError(String),
 
-	#[error("Sync error: {0}")]
-	SyncError(String),
+    #[error("Sync error: {0}")]
+    SyncError(String),
 }

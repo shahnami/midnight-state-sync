@@ -18,7 +18,7 @@ use rand::Rng;
 /// # Returns
 /// A 64-character hexadecimal string representing a random 32-byte seed.
 pub fn generate_random_seed() -> String {
-	let mut seed = [0u8; 32];
-	rand::rng().fill(&mut seed);
-	hex::encode(seed)
+    let mut seed = [0u8; 32];
+    rand::rng().fill(&mut seed);
+    hex::encode(seed)
 }

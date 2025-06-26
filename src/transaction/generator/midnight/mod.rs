@@ -29,34 +29,34 @@ use serde::{Deserialize, Serialize};
 /// - `ClaimMint`: Claims minted coins of a specific type and value.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum Operation {
-	Call {
-		address: String,
-		entry_point: String,
-	},
-	Deploy {
-		address: String,
-	},
-	FallibleCoins,
-	GuaranteedCoins,
-	Maintain {
-		address: String,
-	},
-	ClaimMint {
-		value: u128,
-		coin_type: String,
-	},
+    Call {
+        address: String,
+        entry_point: String,
+    },
+    Deploy {
+        address: String,
+    },
+    FallibleCoins,
+    GuaranteedCoins,
+    Maintain {
+        address: String,
+    },
+    ClaimMint {
+        value: u128,
+        coin_type: String,
+    },
 }
 /// RPC representation of a Midnight transaction.
 ///
 /// Contains the transaction hash, a list of operations, and associated identifiers.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct MidnightRpcTransaction {
-	/// The transaction hash.
-	pub tx_hash: String,
-	/// The list of operations included in the transaction.
-	pub operations: Vec<Operation>,
-	/// Identifiers associated with the transaction.
-	pub identifiers: Vec<String>,
+    /// The transaction hash.
+    pub tx_hash: String,
+    /// The list of operations included in the transaction.
+    pub operations: Vec<Operation>,
+    /// Identifiers associated with the transaction.
+    pub identifiers: Vec<String>,
 }
 
 /// Different types of transactions that can appear in RPC responses.
@@ -65,20 +65,20 @@ pub struct MidnightRpcTransaction {
 /// malformed transactions, timestamps, runtime upgrades, and unknown transactions.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub enum RpcTransaction {
-	/// A valid Midnight transaction with raw data and parsed fields.
-	MidnightTransaction {
-		#[serde(skip)]
-		tx_raw: String,
-		tx: MidnightRpcTransaction,
-	},
-	/// A malformed Midnight transaction.
-	MalformedMidnightTransaction,
-	/// A timestamp entry.
-	Timestamp(u64),
-	/// A runtime upgrade event.
-	RuntimeUpgrade,
-	/// An unknown transaction type.
-	UnknownTransaction,
+    /// A valid Midnight transaction with raw data and parsed fields.
+    MidnightTransaction {
+        #[serde(skip)]
+        tx_raw: String,
+        tx: MidnightRpcTransaction,
+    },
+    /// A malformed Midnight transaction.
+    MalformedMidnightTransaction,
+    /// A timestamp entry.
+    Timestamp(u64),
+    /// A runtime upgrade event.
+    RuntimeUpgrade,
+    /// An unknown transaction type.
+    UnknownTransaction,
 }
 
 /// RPC representation of a block containing transactions.
@@ -86,10 +86,10 @@ pub enum RpcTransaction {
 /// Contains the block header, a list of transactions, and a transaction index mapping.
 #[derive(Clone, PartialEq, Eq, Debug, Serialize, Deserialize)]
 pub struct RpcBlock<Header> {
-	/// The block header.
-	pub header: Header,
-	/// The list of transactions in the block.
-	pub body: Vec<RpcTransaction>,
-	/// A mapping of transaction hashes to additional data.
-	pub transactions_index: Vec<(String, String)>,
+    /// The block header.
+    pub header: Header,
+    /// The list of transactions in the block.
+    pub body: Vec<RpcTransaction>,
+    /// A mapping of transaction hashes to additional data.
+    pub transactions_index: Vec<(String, String)>,
 }

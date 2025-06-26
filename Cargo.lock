@@ -2745,7 +2745,6 @@ dependencies = [
  "midnight-ledger",
  "midnight-node-ledger-helpers",
  "midnight-node-res",
- "midnight-serialize",
  "rand 0.9.1",
  "reqwest 0.12.20",
  "serde",

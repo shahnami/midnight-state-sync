@@ -10,8 +10,9 @@
 use crate::indexer::TransactionData;
 use crate::wallet::WalletSyncError;
 
-use midnight_node_ledger_helpers::{DefaultDB, NetworkId, Proof, Transaction};
-use midnight_serialize::deserialize;
+use midnight_node_ledger_helpers::{
+    DefaultDB, NetworkId, Proof, Transaction, mn_ledger_serialize::deserialize,
+};
 use tracing::{debug, error};
 
 #[derive(Clone)]
